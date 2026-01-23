@@ -40,11 +40,21 @@ export const Register: React.FC = () => {
         password: formData.password
       });
       
-      // Auto login after registration
-      await login(formData.email, formData.password);
+      // If registration/recovery was successful, ensure we are logged in and redirect
+      // Note: register() logic in AuthContext might have already signed us in during recovery
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'An error occurred during registration.');
+      let message = 'An error occurred during registration.';
+      if (err.message) {
+        message = err.message;
+      } else if (err.code === 'auth/email-already-in-use') {
+        message = 'Email is already in use. Please log in.';
+      } else if (err.code === 'auth/weak-password') {
+        message = 'Password is too weak.';
+      } else if (err.code === 'auth/invalid-email') {
+        message = 'Invalid email address.';
+      }
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +63,7 @@ export const Register: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-white flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="bg-indigo-600 p-6 text-center">
+        <div className="bg-indigo-600 p-6 text-center relative">
           <Link to="/login" className="absolute top-6 left-6 text-indigo-200 hover:text-white transition-colors">
             <ArrowLeft className="w-6 h-6" />
           </Link>

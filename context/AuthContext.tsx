@@ -38,7 +38,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               isAuthenticated: true 
             });
           } else {
-             // Handle case where auth exists but db profile doesn't
+             // Handle case where auth exists but db profile doesn't.
+             // We do NOT sign out here automatically, because the 'register' function 
+             // needs the auth session to exist to repair the profile.
              console.warn("Auth user found but no Firestore profile");
              setState({ user: null, isAuthenticated: false });
           }
@@ -58,29 +60,76 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password?: string): Promise<boolean> => {
     if (!password) return false;
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Explicitly check if profile exists to prevent "stuck" state
+      const userProfile = await dbService.getUserById(credential.user.uid);
+      
+      if (!userProfile) {
+        // If no profile, sign out and throw error to guide user to Register/Fix
+        await signOut(auth);
+        throw new Error("Account setup incomplete. Please register again to finish creating your account.");
+      }
+
       // State updates are handled by the onAuthStateChanged listener
       return true;
     } catch (error) {
       console.error("Login failed", error);
-      throw error; // Propagate error to UI
+      throw error;
     }
   };
 
   const register = async (data: Omit<User, 'id' | 'status' | 'role'>): Promise<boolean> => {
     if (!data.password) throw new Error("Password is required");
     try {
-      // 1. Create Auth User
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      let uid = '';
       
-      // 2. Create Firestore Profile
-      // The role assignment logic (First user = Admin) happens in dbService.createUserProfile
-      await dbService.createUserProfile(userCredential.user.uid, {
+      // 1. Create Auth User
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        uid = userCredential.user.uid;
+      } catch (authError: any) {
+        // SPECIAL HANDLING: If email already exists, check if we need to repair a broken profile
+        if (authError.code === 'auth/email-already-in-use') {
+          try {
+             // Attempt to sign in to verify ownership before repairing
+             const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
+             uid = userCredential.user.uid;
+             
+             // Check if profile exists
+             const existingProfile = await dbService.getUserById(uid);
+             if (existingProfile) {
+               throw new Error("This email is already registered. Please log in.");
+             }
+             // If we are here, we are authenticated, but profile is missing. Proceed to create it.
+          } catch (loginError: any) {
+             if (loginError.message === "This email is already registered. Please log in.") {
+               throw loginError;
+             }
+             throw new Error("Email already in use. Please log in.");
+          }
+        } else {
+          throw authError;
+        }
+      }
+
+      // 2. Create Firestore Profile (Standard or Recovery)
+      await dbService.createUserProfile(uid, {
         name: data.name,
         email: data.email,
         department: data.department,
-        role: UserRole.EMPLOYEE // dbService might override this if it's the first user
+        role: UserRole.EMPLOYEE
       });
+      
+      // 3. Manually update state immediately to prevent race conditions with redirects
+      // onAuthStateChanged triggers asynchronously and might not catch the DB creation in time
+      const newUserProfile = await dbService.getUserById(uid);
+      if (newUserProfile) {
+        setState({
+          user: newUserProfile,
+          isAuthenticated: true
+        });
+      }
 
       return true;
     } catch (error) {
@@ -92,6 +141,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     try {
       await signOut(auth);
+      setState({ user: null, isAuthenticated: false });
     } catch (error) {
       console.error("Logout failed", error);
     }

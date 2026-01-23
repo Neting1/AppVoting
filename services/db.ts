@@ -38,16 +38,29 @@ export const dbService = {
 
   // Used for registering a new user linked to Firebase Auth UID
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
+    let role = user.role;
+
     // Check if this is the first user ever
-    const coll = collection(db, 'users');
-    const snapshot = await getCountFromServer(coll);
-    const isFirstUser = snapshot.data().count === 0;
+    // Wrapped in try-catch because security rules often block 'count'/'list' operations for new non-admin users.
+    // If we can't count, we default to the requested role (usually EMPLOYEE), effectively skipping the auto-admin check
+    // if permissions aren't set up to allow it for public/new users.
+    try {
+      const coll = collection(db, 'users');
+      const snapshot = await getCountFromServer(coll);
+      const isFirstUser = snapshot.data().count === 0;
+      if (isFirstUser) {
+        role = UserRole.ADMIN;
+      }
+    } catch (error) {
+      console.warn("Skipping 'First User is Admin' check due to insufficient permissions:", error);
+      // Proceed with default role
+    }
 
     const newUserRef = doc(db, 'users', uid);
     const newUser: User = {
       ...user,
       id: uid,
-      role: isFirstUser ? UserRole.ADMIN : user.role, // First user is Admin
+      role: role,
       status: 'ACTIVE'
     };
     
@@ -63,8 +76,6 @@ export const dbService = {
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
     // This method generates an ID automatically. 
     // Mainly used by Admin to add employees without them self-registering yet (shadow accounts).
-    // Note: Shadow accounts won't be able to login via Firebase Auth until they register/claim email.
-    // For now, we assume this creates a placeholder.
     
     // Check for existing email
     const q = query(collection(db, 'users'), where("email", "==", user.email));

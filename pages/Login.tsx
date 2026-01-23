@@ -23,8 +23,15 @@ export const Login: React.FC = () => {
       } else {
         setError('Invalid email address or password.');
       }
-    } catch (err) {
-      setError('An error occurred during login');
+    } catch (err: any) {
+      // Check for specific error message from AuthContext
+      if (err.message && err.message.includes("Account setup incomplete")) {
+        setError(err.message);
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        setError('Invalid email address or password.');
+      } else {
+        setError('An error occurred during login. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -84,9 +91,16 @@ export const Login: React.FC = () => {
             </div>
 
             {error && (
-              <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 flex items-center">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span>
-                {error}
+              <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 flex items-start">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
+                <div className="flex-1">
+                  {error}
+                  {error.includes("register again") && (
+                    <Link to="/register" className="block mt-1 font-bold underline hover:text-red-800">
+                      Go to Registration
+                    </Link>
+                  )}
+                </div>
               </div>
             )}
 
