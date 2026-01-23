@@ -1,8 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { dbService } from '../services/db';
 import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock } from 'lucide-react';
+import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock, FileBadge } from 'lucide-react';
+// @ts-ignore
+import confetti from 'canvas-confetti';
+// @ts-ignore
+import html2canvas from 'html2canvas';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -46,6 +50,11 @@ export const AdminDashboard: React.FC = () => {
   });
   const [addUserError, setAddUserError] = useState('');
 
+  // Certificate State
+  const [isCertificateOpen, setIsCertificateOpen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const certificateRef = useRef<HTMLDivElement>(null);
+
   const refreshData = async () => {
     try {
       const cycle = await dbService.getActiveCycle();
@@ -81,6 +90,33 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     refreshData();
   }, []);
+
+  // Celebration Effect
+  useEffect(() => {
+    if (winner && activeCycle?.status === CycleStatus.CLOSED) {
+      // Small delay to ensure render
+      const timer = setTimeout(() => {
+        const duration = 3 * 1000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+        const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+        const interval: any = setInterval(function() {
+          const timeLeft = animationEnd - Date.now();
+
+          if (timeLeft <= 0) {
+            return clearInterval(interval);
+          }
+
+          const particleCount = 50 * (timeLeft / duration);
+          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+        }, 250);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [winner, activeCycle]);
 
   const handleOpenCreateCycle = () => {
     const now = new Date();
@@ -164,6 +200,7 @@ export const AdminDashboard: React.FC = () => {
     if (leader.voteCount > 0) {
       await dbService.setCycleWinner(activeCycle.id, leader.nomineeId);
       await dbService.updateCycleStatus(activeCycle.id, CycleStatus.CLOSED);
+      // Confetti will trigger via useEffect once state updates
       refreshData();
     }
   };
@@ -193,6 +230,29 @@ export const AdminDashboard: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDownloadCertificate = async () => {
+    if (!certificateRef.current || !winner || !activeCycle) return;
+    
+    setIsDownloading(true);
+    try {
+        const canvas = await html2canvas(certificateRef.current, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true
+        });
+        
+        const link = document.createElement('a');
+        link.download = `Certificate_${winner.name.replace(/\s+/g, '_')}_${MONTHS[activeCycle.month]}_${activeCycle.year}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (err) {
+        console.error("Certificate generation failed", err);
+        alert("Could not generate certificate. Please try again.");
+    } finally {
+        setIsDownloading(false);
+    }
   };
 
   // User Management Functions
@@ -252,27 +312,37 @@ export const AdminDashboard: React.FC = () => {
   const renderWinnerSection = () => {
     if (winner) {
       return (
-        <div className="flex flex-col md:flex-row items-center gap-6">
-          <div className="relative">
-            {winner.avatar ? (
-               <img src={winner.avatar} alt={winner.name} className="w-24 h-24 rounded-full border-4 border-white shadow-lg object-cover" />
-            ) : (
-               <div className="w-24 h-24 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-600 text-3xl font-bold border-4 border-white shadow-lg">
-                 {winner.name.charAt(0)}
-               </div>
-            )}
-            <div className="absolute -bottom-2 -right-2 bg-yellow-400 text-white p-2 rounded-full shadow-md">
-              <Trophy className="w-5 h-5 fill-current" />
+        <div className="flex flex-col md:flex-row items-center gap-6 justify-between w-full">
+          <div className="flex items-center gap-6">
+            <div className="relative">
+                {winner.avatar ? (
+                <img src={winner.avatar} alt={winner.name} className="w-24 h-24 rounded-full border-4 border-white shadow-lg object-cover" />
+                ) : (
+                <div className="w-24 h-24 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-600 text-3xl font-bold border-4 border-white shadow-lg">
+                    {winner.name.charAt(0)}
+                </div>
+                )}
+                <div className="absolute -bottom-2 -right-2 bg-yellow-400 text-white p-2 rounded-full shadow-md animate-bounce">
+                    <Trophy className="w-5 h-5 fill-current" />
+                </div>
+            </div>
+            <div className="text-center md:text-left">
+                <h3 className="text-3xl font-bold text-white mb-1">{winner.name}</h3>
+                <p className="text-indigo-100 text-lg">{winner.department}</p>
+                <div className="mt-4 inline-flex items-center px-4 py-1.5 rounded-full bg-white/20 backdrop-blur-sm text-sm font-medium border border-white/30">
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Official Employee of the Month
+                </div>
             </div>
           </div>
-          <div className="text-center md:text-left">
-            <h3 className="text-3xl font-bold text-white mb-1">{winner.name}</h3>
-            <p className="text-indigo-100 text-lg">{winner.department}</p>
-            <div className="mt-4 inline-flex items-center px-4 py-1.5 rounded-full bg-white/20 backdrop-blur-sm text-sm font-medium border border-white/30">
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Official Employee of the Month
-            </div>
-          </div>
+
+          <button 
+             onClick={() => setIsCertificateOpen(true)}
+             className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/40 rounded-xl font-semibold shadow-lg backdrop-blur-md transition-all active:scale-95 flex items-center"
+          >
+             <FileBadge className="w-5 h-5 mr-2" />
+             Download Certificate
+          </button>
         </div>
       );
     }
@@ -591,6 +661,101 @@ export const AdminDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Certificate Modal */}
+      {isCertificateOpen && winner && activeCycle && (
+        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800">Certificate Preview</h3>
+                    <button onClick={() => setIsCertificateOpen(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-auto p-8 bg-gray-100 flex justify-center">
+                    {/* Certificate Container to Capture */}
+                    <div 
+                        ref={certificateRef}
+                        className="bg-white w-[800px] h-[600px] shadow-2xl relative flex flex-col p-12 text-center items-center justify-between border-[16px] border-double border-[#C5A059]"
+                        style={{ minWidth: '800px', minHeight: '600px' }}
+                    >
+                        {/* Decorative Corners */}
+                        <div className="absolute top-4 left-4 w-24 h-24 border-t-4 border-l-4 border-[#C5A059] opacity-50"></div>
+                        <div className="absolute top-4 right-4 w-24 h-24 border-t-4 border-r-4 border-[#C5A059] opacity-50"></div>
+                        <div className="absolute bottom-4 left-4 w-24 h-24 border-b-4 border-l-4 border-[#C5A059] opacity-50"></div>
+                        <div className="absolute bottom-4 right-4 w-24 h-24 border-b-4 border-r-4 border-[#C5A059] opacity-50"></div>
+
+                        {/* Content */}
+                        <div className="z-10 w-full flex flex-col items-center h-full justify-between">
+                            <div className="flex flex-col items-center gap-2 mt-4">
+                                <Award className="w-16 h-16 text-[#C5A059]" />
+                                <h1 className="text-5xl font-serif-display font-bold text-gray-900 tracking-wider uppercase mb-2">Certificate</h1>
+                                <p className="text-xl font-serif-display tracking-[0.3em] text-[#C5A059] uppercase">of Recognition</p>
+                            </div>
+
+                            <div className="my-8 w-full">
+                                <p className="text-gray-500 italic text-lg mb-6">This certificate is proudly presented to</p>
+                                <h2 className="text-6xl font-signature text-gray-900 mb-6 px-8 border-b-2 border-gray-200 pb-2 inline-block min-w-[50%]">
+                                    {winner.name}
+                                </h2>
+                                <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
+                                    For outstanding performance and dedication, having been voted by colleagues as the
+                                    <span className="font-bold text-[#C5A059] block mt-2 text-2xl font-serif-display">Employee of the Month</span>
+                                </p>
+                            </div>
+
+                            <div className="flex justify-between w-full px-12 mt-auto mb-4 items-end">
+                                <div className="text-center">
+                                    <div className="text-xl font-bold text-gray-800 border-b border-gray-400 pb-1 mb-2 min-w-[200px]">
+                                        {MONTHS[activeCycle.month]} {activeCycle.year}
+                                    </div>
+                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Date</p>
+                                </div>
+
+                                <div className="flex flex-col items-center">
+                                    <div className="w-20 h-20 rounded-full border-4 border-[#C5A059] flex items-center justify-center mb-2 bg-[#C5A059]/10">
+                                        <Trophy className="w-10 h-10 text-[#C5A059]" />
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 tracking-widest uppercase">Twinhill Enterprise</p>
+                                </div>
+
+                                <div className="text-center">
+                                    <div className="text-2xl font-signature text-gray-800 border-b border-gray-400 pb-1 mb-2 min-w-[200px]">
+                                        Twinhill Admin
+                                    </div>
+                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Signature</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white rounded-b-xl">
+                    <button 
+                        onClick={() => setIsCertificateOpen(false)}
+                        className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 font-medium rounded-lg"
+                    >
+                        Close
+                    </button>
+                    <button 
+                        onClick={handleDownloadCertificate}
+                        disabled={isDownloading}
+                        className="px-6 py-2.5 bg-[#C5A059] hover:bg-[#b08d4b] text-white font-bold rounded-lg shadow-sm flex items-center disabled:opacity-50"
+                    >
+                        {isDownloading ? (
+                            <>Processing...</>
+                        ) : (
+                            <>
+                                <Download className="w-4 h-4 mr-2" />
+                                Download Image
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* New Cycle Modal */}
       {isCreateCycleModalOpen && (
