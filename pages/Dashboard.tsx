@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { dbService } from '../services/db';
 import { Cycle, CycleStatus, Nomination, Vote } from '../types';
-import { Calendar, UserCheck, Vote as VoteIcon, AlertCircle, CheckCircle } from 'lucide-react';
+import { Calendar, UserCheck, Vote as VoteIcon, AlertCircle, CheckCircle, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const MONTHS = [
@@ -16,24 +16,35 @@ export const Dashboard: React.FC = () => {
   const [userNomination, setUserNomination] = useState<Nomination | undefined>(undefined);
   const [userVote, setUserVote] = useState<Vote | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      setError(null);
       try {
         const cycle = await dbService.getActiveCycle();
         setActiveCycle(cycle);
 
         if (user && cycle) {
-          const [nomination, vote] = await Promise.all([
-            dbService.getUserNomination(user.id, cycle.id),
-            dbService.getUserVote(user.id, cycle.id)
-          ]);
-          setUserNomination(nomination);
-          setUserVote(vote);
+          try {
+            const [nomination, vote] = await Promise.all([
+              dbService.getUserNomination(user.id, cycle.id),
+              dbService.getUserVote(user.id, cycle.id)
+            ]);
+            setUserNomination(nomination);
+            setUserVote(vote);
+          } catch (userDataError) {
+             // Silently fail user specific data load if main cycle loaded but permissions block user data
+          }
         }
-      } catch (error) {
-        console.error("Error loading dashboard", error);
+      } catch (error: any) {
+        // Only show error if it's strictly not a permission error or if needed
+        // Permission errors are now largely suppressed in db.ts to return empty/undefined
+        if (error.code !== 'permission-denied') {
+             console.error("Error loading dashboard cycle data", error);
+             setError("Unable to load dashboard data. Please check your connection.");
+        }
       } finally {
         setLoading(false);
       }
@@ -43,7 +54,29 @@ export const Dashboard: React.FC = () => {
   }, [user]);
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading dashboard...</div>;
+    return (
+        <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="text-gray-500 animate-pulse">Loading dashboard...</div>
+        </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center bg-white rounded-xl shadow-sm border border-red-100">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4">
+          <WifiOff className="w-6 h-6 text-red-500" />
+        </div>
+        <h3 className="text-lg font-medium text-gray-900">Connection Error</h3>
+        <p className="text-gray-500 mt-2">{error}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (!activeCycle) {

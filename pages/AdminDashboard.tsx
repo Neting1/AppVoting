@@ -47,17 +47,28 @@ export const AdminDashboard: React.FC = () => {
       const cycle = await dbService.getActiveCycle();
       setActiveCycle(cycle);
       if (cycle) {
-        const stats = await dbService.getCycleStats(cycle.id);
-        setStats(stats);
-        if (cycle.winnerId) {
-          const winnerUser = await dbService.getUserById(cycle.winnerId);
-          setWinner(winnerUser || null);
-        } else {
-          setWinner(null);
+        try {
+          const stats = await dbService.getCycleStats(cycle.id);
+          setStats(stats || []);
+          if (cycle.winnerId) {
+            const winnerUser = await dbService.getUserById(cycle.winnerId);
+            setWinner(winnerUser || null);
+          } else {
+            setWinner(null);
+          }
+        } catch (statError) {
+          console.warn("Failed to load cycle stats", statError);
+          setStats([]);
         }
       }
-      const allUsers = await dbService.getUsers();
-      setUsers(allUsers);
+      
+      try {
+        const allUsers = await dbService.getUsers();
+        setUsers(allUsers || []);
+      } catch (userError) {
+        console.warn("Failed to load users for admin", userError);
+        setUsers([]);
+      }
     } catch (error) {
       console.error("Failed to load admin data", error);
     }
@@ -78,18 +89,15 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     setCreateCycleError('');
 
-    const now = new Date();
-    const selectedDate = new Date(createCycleForm.year, createCycleForm.month);
-    const currentDate = new Date(now.getFullYear(), now.getMonth());
-
-    if (selectedDate > currentDate) {
-      setCreateCycleError("Cannot start a cycle for a future month.");
-      return;
+    // Removed restriction for future dates to allow admins to prepare cycles in advance.
+    
+    try {
+        await dbService.createCycle(createCycleForm.month, createCycleForm.year);
+        setIsCreateCycleModalOpen(false);
+        refreshData();
+    } catch (e: any) {
+        setCreateCycleError("Failed to create cycle: " + e.message);
     }
-
-    await dbService.createCycle(createCycleForm.month, createCycleForm.year);
-    setIsCreateCycleModalOpen(false);
-    refreshData();
   };
 
   const updateStatus = async (status: CycleStatus) => {
@@ -510,6 +518,11 @@ export const AdminDashboard: React.FC = () => {
               ))}
             </tbody>
           </table>
+          {users.length === 0 && (
+            <div className="text-center py-8 text-gray-400 bg-gray-50 border-t border-gray-100">
+               No employees found or access restricted.
+            </div>
+          )}
         </div>
       </div>
 

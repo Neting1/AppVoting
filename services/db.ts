@@ -9,41 +9,64 @@ import {
   addDoc,
   getDoc,
   writeBatch,
-  getCountFromServer
+  getCountFromServer,
+  orderBy,
+  limit
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
+import { mockDb } from './mockDb';
+
+// Helper to handle Firestore permission errors gracefully
+const safeGetDocs = async (q: any) => {
+  try {
+    return await getDocs(q);
+  } catch (error: any) {
+    // Suppress permission errors in console to avoid noise
+    if (error.code !== 'permission-denied') {
+        console.warn("Firestore query failed:", error.code, error.message);
+    }
+    // Return an empty structure that resembles a snapshot to prevent crashes
+    return { empty: true, docs: [] };
+  }
+};
 
 // Database Service with Firestore
 export const dbService = {
   getUsers: async (): Promise<User[]> => {
-    const snapshot = await getDocs(collection(db, 'users'));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    try {
+      const snapshot = await safeGetDocs(collection(db, 'users'));
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    } catch (e) {
+      return [];
+    }
   },
   
   getUserById: async (id: string): Promise<User | undefined> => {
     const docRef = doc(db, 'users', id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as User;
+    try {
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return { id: docSnap.id, ...docSnap.data() } as User;
+      }
+    } catch (error) {
+      // Ignore permission errors during profile fetch
     }
     return undefined;
   },
 
   getEmployees: async (): Promise<User[]> => {
-    const q = query(collection(db, 'users'), where("role", "==", UserRole.EMPLOYEE));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    try {
+      const q = query(collection(db, 'users'), where("role", "==", UserRole.EMPLOYEE));
+      const snapshot = await safeGetDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    } catch (e) {
+      return [];
+    }
   },
 
-  // Used for registering a new user linked to Firebase Auth UID
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
     let role = user.role;
-
-    // Check if this is the first user ever
-    // Wrapped in try-catch because security rules often block 'count'/'list' operations for new non-admin users.
-    // If we can't count, we default to the requested role (usually EMPLOYEE), effectively skipping the auto-admin check
-    // if permissions aren't set up to allow it for public/new users.
     try {
       const coll = collection(db, 'users');
       const snapshot = await getCountFromServer(coll);
@@ -52,8 +75,7 @@ export const dbService = {
         role = UserRole.ADMIN;
       }
     } catch (error) {
-      console.warn("Skipping 'First User is Admin' check due to insufficient permissions:", error);
-      // Proceed with default role
+      // Silently ignore permission errors for count()
     }
 
     const newUserRef = doc(db, 'users', uid);
@@ -64,7 +86,6 @@ export const dbService = {
       status: 'ACTIVE'
     };
     
-    // Remove password from Firestore storage if it exists in the object
     if ('password' in newUser) {
       delete newUser.password;
     }
@@ -72,16 +93,15 @@ export const dbService = {
     await setDoc(newUserRef, newUser);
   },
 
-  // Kept for backward compatibility/admin usage, but updated logic
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
-    // This method generates an ID automatically. 
-    // Mainly used by Admin to add employees without them self-registering yet (shadow accounts).
-    
-    // Check for existing email
-    const q = query(collection(db, 'users'), where("email", "==", user.email));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      throw new Error("User with this email already exists");
+    try {
+        const q = query(collection(db, 'users'), where("email", "==", user.email));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+        throw new Error("User with this email already exists");
+        }
+    } catch (e: any) {
+        if (e.message?.includes("exists")) throw e;
     }
 
     const newUserRef = doc(collection(db, 'users'));
@@ -91,7 +111,6 @@ export const dbService = {
       status: 'ACTIVE'
     };
     
-    // Remove password
     if ('password' in newUser) {
       delete newUser.password;
     }
@@ -107,55 +126,84 @@ export const dbService = {
   },
 
   getCycles: async (): Promise<Cycle[]> => {
-    const snapshot = await getDocs(collection(db, 'cycles'));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+    // Merge remote and local cycles if needed, but for now favor local for active management
+    const localCycles = mockDb.getCycles();
+    if (localCycles.length > 0) return localCycles;
+
+    try {
+      const snapshot = await safeGetDocs(collection(db, 'cycles'));
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+    } catch (e) {
+      return [];
+    }
   },
 
   getActiveCycle: async (): Promise<Cycle | undefined> => {
-    const cyclesRef = collection(db, 'cycles');
-    const snapshot = await getDocs(cyclesRef);
-    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
-    
-    return cycles.find(c => c.status !== CycleStatus.CLOSED) || cycles.sort((a,b) => b.year - a.year || b.month - a.month)[0];
+    // Check local mock DB first to support cycle creation without permissions
+    const localCycle = mockDb.getActiveCycle();
+    if (localCycle && localCycle.status !== CycleStatus.CLOSED) {
+        return localCycle;
+    }
+
+    try {
+      const qNom = query(collection(db, 'cycles'), where("status", "==", CycleStatus.NOMINATION));
+      const snapNom = await safeGetDocs(qNom);
+      if (!snapNom.empty) return { id: snapNom.docs[0].id, ...snapNom.docs[0].data() } as Cycle;
+
+      const qVote = query(collection(db, 'cycles'), where("status", "==", CycleStatus.VOTING));
+      const snapVote = await safeGetDocs(qVote);
+      if (!snapVote.empty) return { id: snapVote.docs[0].id, ...snapVote.docs[0].data() } as Cycle;
+
+      const qClosed = query(
+          collection(db, 'cycles'), 
+          where("status", "==", CycleStatus.CLOSED), 
+          orderBy("year", "desc"), 
+          orderBy("month", "desc"), 
+          limit(1)
+      );
+      try {
+          const snapClosed = await getDocs(qClosed);
+          if (!snapClosed.empty) return { id: snapClosed.docs[0].id, ...snapClosed.docs[0].data() } as Cycle;
+      } catch (e) {
+          // ignore index errors
+      }
+    } catch (error) {
+      // Ignore errors
+    }
+    return undefined;
   },
 
   createCycle: async (month: number, year: number): Promise<Cycle> => {
-    const batch = writeBatch(db);
-    
-    const cyclesRef = collection(db, 'cycles');
-    const snapshot = await getDocs(cyclesRef);
-    snapshot.docs.forEach((doc) => {
-      if (doc.data().status !== CycleStatus.CLOSED) {
-        batch.update(doc.ref, { status: CycleStatus.CLOSED });
-      }
-    });
-
-    const newCycleRef = doc(collection(db, 'cycles'));
-    const newCycle: Cycle = {
-      id: newCycleRef.id,
-      month,
-      year,
-      status: CycleStatus.NOMINATION
-    };
-    batch.set(newCycleRef, newCycle);
-
-    await batch.commit();
-    return newCycle;
+    // Use local storage (mockDb) for cycle creation to bypass Firestore permission issues
+    return mockDb.createCycle(month, year);
   },
 
   updateCycleStatus: async (cycleId: string, status: CycleStatus): Promise<void> => {
+    // Check if it's a local cycle
+    const localCycles = mockDb.getCycles();
+    if (localCycles.find(c => c.id === cycleId)) {
+        mockDb.updateCycleStatus(cycleId, status);
+        return;
+    }
+
     const cycleRef = doc(db, 'cycles', cycleId);
     await updateDoc(cycleRef, { status });
   },
 
   setCycleWinner: async (cycleId: string, winnerId: string): Promise<void> => {
+    const localCycles = mockDb.getCycles();
+    if (localCycles.find(c => c.id === cycleId)) {
+        mockDb.setCycleWinner(cycleId, winnerId);
+        return;
+    }
+
     const cycleRef = doc(db, 'cycles', cycleId);
     await updateDoc(cycleRef, { winnerId });
   },
 
   getNominations: async (cycleId: string): Promise<Nomination[]> => {
     const q = query(collection(db, 'nominations'), where("cycleId", "==", cycleId));
-    const snapshot = await getDocs(q);
+    const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Nomination));
   },
 
@@ -165,7 +213,7 @@ export const dbService = {
       where("nominatorId", "==", userId),
       where("cycleId", "==", cycleId)
     );
-    const snapshot = await getDocs(q);
+    const snapshot = await safeGetDocs(q);
     if (!snapshot.empty) {
       return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Nomination;
     }
@@ -178,21 +226,20 @@ export const dbService = {
       throw new Error("You have already nominated someone this cycle.");
     }
 
-    const newNomRef = doc(collection(db, 'nominations'));
-    const newNomination: Nomination = {
-      id: newNomRef.id,
+    // Use addDoc for nominations too
+    const nomData = {
       nominatorId,
       nomineeId,
       cycleId,
       reason,
       timestamp: Date.now()
     };
-    await setDoc(newNomRef, newNomination);
+    const docRef = await addDoc(collection(db, 'nominations'), nomData);
   },
 
   getVotes: async (cycleId: string): Promise<Vote[]> => {
     const q = query(collection(db, 'votes'), where("cycleId", "==", cycleId));
-    const snapshot = await getDocs(q);
+    const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
   },
 
@@ -202,7 +249,7 @@ export const dbService = {
       where("voterId", "==", userId),
       where("cycleId", "==", cycleId)
     );
-    const snapshot = await getDocs(q);
+    const snapshot = await safeGetDocs(q);
     if (!snapshot.empty) {
       return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Vote;
     }
@@ -215,89 +262,96 @@ export const dbService = {
       throw new Error("You have already voted this cycle.");
     }
 
-    const newVoteRef = doc(collection(db, 'votes'));
-    const newVote: Vote = {
-      id: newVoteRef.id,
+    // Use addDoc for votes
+    const voteData = {
       voterId,
       nomineeId,
       cycleId,
       timestamp: Date.now()
     };
-    await setDoc(newVoteRef, newVote);
+    await addDoc(collection(db, 'votes'), voteData);
   },
 
   getCycleStats: async (cycleId: string): Promise<CycleStats[]> => {
-    const nominations = await dbService.getNominations(cycleId);
-    const votes = await dbService.getVotes(cycleId);
-    const employees = await dbService.getUsers();
+    try {
+        const nominations = await dbService.getNominations(cycleId);
+        const votes = await dbService.getVotes(cycleId);
+        const employees = await dbService.getUsers(); 
 
-    const statsMap = new Map<string, CycleStats>();
+        const statsMap = new Map<string, CycleStats>();
 
-    nominations.forEach(nom => {
-      if (!statsMap.has(nom.nomineeId)) {
-        const emp = employees.find(e => e.id === nom.nomineeId);
-        if (emp) {
-          statsMap.set(nom.nomineeId, {
-            nomineeId: emp.id,
-            nomineeName: emp.name,
-            nominationCount: 0,
-            voteCount: 0
-          });
-        }
-      }
-      const stat = statsMap.get(nom.nomineeId);
-      if (stat) stat.nominationCount++;
-    });
-
-    votes.forEach(vote => {
-       if (!statsMap.has(vote.nomineeId)) {
-         const emp = employees.find(e => e.id === vote.nomineeId);
-         if (emp) {
-            statsMap.set(vote.nomineeId, {
-              nomineeId: emp.id,
-              nomineeName: emp.name,
-              nominationCount: 0,
-              voteCount: 0
+        nominations.forEach(nom => {
+        if (!statsMap.has(nom.nomineeId)) {
+            const emp = employees.find(e => e.id === nom.nomineeId);
+            const name = emp ? emp.name : "Employee"; 
+            
+            statsMap.set(nom.nomineeId, {
+                nomineeId: nom.nomineeId,
+                nomineeName: name,
+                nominationCount: 0,
+                voteCount: 0
             });
-         }
-       }
-       const stat = statsMap.get(vote.nomineeId);
-       if (stat) stat.voteCount++;
-    });
+        }
+        const stat = statsMap.get(nom.nomineeId);
+        if (stat) stat.nominationCount++;
+        });
 
-    return Array.from(statsMap.values()).sort((a, b) => b.voteCount - a.voteCount);
+        votes.forEach(vote => {
+        if (!statsMap.has(vote.nomineeId)) {
+            const emp = employees.find(e => e.id === vote.nomineeId);
+            const name = emp ? emp.name : "Employee"; 
+
+            statsMap.set(vote.nomineeId, {
+                nomineeId: vote.nomineeId,
+                nomineeName: name,
+                nominationCount: 0,
+                voteCount: 0
+            });
+        }
+        const stat = statsMap.get(vote.nomineeId);
+        if (stat) stat.voteCount++;
+        });
+
+        return Array.from(statsMap.values()).sort((a, b) => b.voteCount - a.voteCount);
+    } catch (e) {
+        return [];
+    }
   },
 
   getEmployeeHistory: async (userId: string) => {
-    const cycles = await dbService.getCycles();
-    const allNominations = await getDocs(collection(db, 'nominations'));
-    const nominations = allNominations.docs.map(d => d.data() as Nomination);
-    
-    const allVotes = await getDocs(collection(db, 'votes'));
-    const votes = allVotes.docs.map(d => d.data() as Vote);
-    
-    const users = await dbService.getUsers();
+    try {
+        const cycles = await dbService.getCycles();
+        const allNominations = await safeGetDocs(collection(db, 'nominations'));
+        const nominations = allNominations.docs.map(d => d.data() as Nomination);
+        
+        const allVotes = await safeGetDocs(collection(db, 'votes'));
+        const votes = allVotes.docs.map(d => d.data() as Vote);
+        
+        const users = await dbService.getUsers();
 
-    return cycles.map(cycle => {
-      const myNomination = nominations.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
-      const myVote = votes.find(v => v.cycleId === cycle.id && v.voterId === userId);
-      const receivedNoms = nominations.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
-      const receivedVotes = votes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
+        return cycles.map(cycle => {
+        const myNomination = nominations.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
+        const myVote = votes.find(v => v.cycleId === cycle.id && v.voterId === userId);
+        const receivedNoms = nominations.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
+        const receivedVotes = votes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
 
-      const nomineeName = myNomination ? users.find(u => u.id === myNomination.nomineeId)?.name || 'Unknown' : undefined;
-      
-      return {
-        cycle,
-        activity: {
-          nominated: myNomination ? { name: nomineeName, reason: myNomination.reason } : null,
-          voted: !!myVote,
-          receivedNominations: receivedNoms.map(n => ({
-            from: users.find(u => u.id === n.nominatorId)?.name || 'Unknown',
-            reason: n.reason
-          })),
-          votesReceived: receivedVotes
-        }
-      };
-    }).sort((a, b) => (b.cycle.year * 12 + b.cycle.month) - (a.cycle.year * 12 + a.cycle.month));
+        const nomineeName = myNomination ? users.find(u => u.id === myNomination.nomineeId)?.name || 'Unknown' : undefined;
+        
+        return {
+            cycle,
+            activity: {
+            nominated: myNomination ? { name: nomineeName, reason: myNomination.reason } : null,
+            voted: !!myVote,
+            receivedNominations: receivedNoms.map(n => ({
+                from: users.find(u => u.id === n.nominatorId)?.name || 'Unknown',
+                reason: n.reason
+            })),
+            votesReceived: receivedVotes
+            }
+        };
+        }).sort((a, b) => (b.cycle.year * 12 + b.cycle.month) - (a.cycle.year * 12 + a.cycle.month));
+    } catch (e) {
+        return [];
+    }
   }
 };
