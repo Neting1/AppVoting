@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { mockDb } from '../services/mockDb';
+import { dbService } from '../services/db';
 import { Cycle, CycleStatus, User, Nomination } from '../types';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
 
@@ -13,60 +13,75 @@ export const Vote: React.FC = () => {
   const [selectedCandidate, setSelectedCandidate] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cycle = mockDb.getActiveCycle();
-    setActiveCycle(cycle);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const cycle = await dbService.getActiveCycle();
+        setActiveCycle(cycle);
 
-    if (cycle && cycle.status === CycleStatus.VOTING) {
-      // Get all nominations for this cycle
-      const nominations = mockDb.getNominations(cycle.id);
-      
-      // Group nominations to find candidates
-      const candidateMap = new Map<string, number>();
-      nominations.forEach(n => {
-        const count = candidateMap.get(n.nomineeId) || 0;
-        candidateMap.set(n.nomineeId, count + 1);
-      });
+        if (cycle && cycle.status === CycleStatus.VOTING) {
+          // Get all nominations for this cycle
+          const nominations = await dbService.getNominations(cycle.id);
+          
+          // Group nominations to find candidates
+          const candidateMap = new Map<string, number>();
+          nominations.forEach(n => {
+            const count = candidateMap.get(n.nomineeId) || 0;
+            candidateMap.set(n.nomineeId, count + 1);
+          });
 
-      // Filter out current user from candidates (prevent self-voting)
-      const validCandidates: { user: User, nominations: number }[] = [];
-      const employees = mockDb.getEmployees();
+          // Filter out current user from candidates (prevent self-voting)
+          const validCandidates: { user: User, nominations: number }[] = [];
+          const employees = await dbService.getEmployees();
 
-      candidateMap.forEach((count, id) => {
-        if (id !== user?.id) {
-           const emp = employees.find(e => e.id === id);
-           if (emp) {
-             validCandidates.push({ user: emp, nominations: count });
-           }
+          candidateMap.forEach((count, id) => {
+            if (id !== user?.id) {
+               const emp = employees.find(e => e.id === id);
+               if (emp) {
+                 validCandidates.push({ user: emp, nominations: count });
+               }
+            }
+          });
+
+          // Sort by nomination count (optional, but looks nice)
+          validCandidates.sort((a, b) => b.nominations - a.nominations);
+          setCandidates(validCandidates);
         }
-      });
 
-      // Sort by nomination count (optional, but looks nice)
-      validCandidates.sort((a, b) => b.nominations - a.nominations);
-      setCandidates(validCandidates);
-    }
-
-    if (user && cycle) {
-      const existing = mockDb.getUserVote(user.id, cycle.id);
-      if (existing) {
-        setSuccess(true);
+        if (user && cycle) {
+          const existing = await dbService.getUserVote(user.id, cycle.id);
+          if (existing) {
+            setSuccess(true);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load voting data", error);
+      } finally {
+        setLoading(false);
       }
-    }
+    };
+    if (user) loadData();
   }, [user]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCycle || !user || !selectedCandidate) return;
 
     try {
-      mockDb.addVote(user.id, selectedCandidate, activeCycle.id);
+      await dbService.addVote(user.id, selectedCandidate, activeCycle.id);
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err: any) {
       setError(err.message);
     }
   };
+
+  if (loading) {
+     return <div className="p-8 text-center text-gray-500">Loading candidates...</div>;
+  }
 
   if (!activeCycle || activeCycle.status !== CycleStatus.VOTING) {
     return (

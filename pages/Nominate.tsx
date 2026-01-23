@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { mockDb } from '../services/mockDb';
+import { dbService } from '../services/db';
 import { Cycle, CycleStatus, User } from '../types';
 import { ArrowLeft, Send } from 'lucide-react';
 
@@ -14,36 +14,52 @@ export const Nominate: React.FC = () => {
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cycle = mockDb.getActiveCycle();
-    setActiveCycle(cycle);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const cycle = await dbService.getActiveCycle();
+        setActiveCycle(cycle);
 
-    // Filter out current user from potential nominees
-    const allEmployees = mockDb.getEmployees().filter(e => e.id !== user?.id);
-    setEmployees(allEmployees);
+        const allEmployees = await dbService.getEmployees();
+        // Filter out current user from potential nominees
+        setEmployees(allEmployees.filter(e => e.id !== user?.id));
 
-    // Check if already nominated
-    if (user && cycle) {
-      const existing = mockDb.getUserNomination(user.id, cycle.id);
-      if (existing) {
-        setSuccess(true);
+        // Check if already nominated
+        if (user && cycle) {
+          const existing = await dbService.getUserNomination(user.id, cycle.id);
+          if (existing) {
+            setSuccess(true);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load nomination data", error);
+      } finally {
+        setLoading(false);
       }
-    }
+    };
+    
+    if (user) loadData();
   }, [user]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCycle || !user) return;
     
     try {
-      mockDb.addNomination(user.id, selectedNominee, activeCycle.id, reason);
+      await dbService.addNomination(user.id, selectedNominee, activeCycle.id, reason);
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err: any) {
       setError(err.message);
     }
   };
+
+  if (loading) {
+    return <div className="p-8 text-center text-gray-500">Loading...</div>;
+  }
 
   if (!activeCycle || activeCycle.status !== CycleStatus.NOMINATION) {
     return (

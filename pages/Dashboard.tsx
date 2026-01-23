@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { mockDb } from '../services/mockDb';
+import { dbService } from '../services/db';
 import { Cycle, CycleStatus, Nomination, Vote } from '../types';
 import { Calendar, UserCheck, Vote as VoteIcon, AlertCircle, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -15,16 +15,36 @@ export const Dashboard: React.FC = () => {
   const [activeCycle, setActiveCycle] = useState<Cycle | undefined>(undefined);
   const [userNomination, setUserNomination] = useState<Nomination | undefined>(undefined);
   const [userVote, setUserVote] = useState<Vote | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cycle = mockDb.getActiveCycle();
-    setActiveCycle(cycle);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const cycle = await dbService.getActiveCycle();
+        setActiveCycle(cycle);
 
-    if (user && cycle) {
-      setUserNomination(mockDb.getUserNomination(user.id, cycle.id));
-      setUserVote(mockDb.getUserVote(user.id, cycle.id));
-    }
+        if (user && cycle) {
+          const [nomination, vote] = await Promise.all([
+            dbService.getUserNomination(user.id, cycle.id),
+            dbService.getUserVote(user.id, cycle.id)
+          ]);
+          setUserNomination(nomination);
+          setUserVote(vote);
+        }
+      } catch (error) {
+        console.error("Error loading dashboard", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) loadData();
   }, [user]);
+
+  if (loading) {
+    return <div className="p-8 text-center text-gray-500">Loading dashboard...</div>;
+  }
 
   if (!activeCycle) {
     return (

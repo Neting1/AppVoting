@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { mockDb } from '../services/mockDb';
+import { dbService } from '../services/db';
 import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock } from 'lucide-react';
@@ -42,18 +42,25 @@ export const AdminDashboard: React.FC = () => {
   });
   const [addUserError, setAddUserError] = useState('');
 
-  const refreshData = () => {
-    const cycle = mockDb.getActiveCycle();
-    setActiveCycle(cycle);
-    if (cycle) {
-      setStats(mockDb.getCycleStats(cycle.id));
-      if (cycle.winnerId) {
-        setWinner(mockDb.getUserById(cycle.winnerId) || null);
-      } else {
-        setWinner(null);
+  const refreshData = async () => {
+    try {
+      const cycle = await dbService.getActiveCycle();
+      setActiveCycle(cycle);
+      if (cycle) {
+        const stats = await dbService.getCycleStats(cycle.id);
+        setStats(stats);
+        if (cycle.winnerId) {
+          const winnerUser = await dbService.getUserById(cycle.winnerId);
+          setWinner(winnerUser || null);
+        } else {
+          setWinner(null);
+        }
       }
+      const allUsers = await dbService.getUsers();
+      setUsers(allUsers);
+    } catch (error) {
+      console.error("Failed to load admin data", error);
     }
-    setUsers(mockDb.getUsers());
   };
 
   useEffect(() => {
@@ -67,7 +74,7 @@ export const AdminDashboard: React.FC = () => {
     setIsCreateCycleModalOpen(true);
   };
 
-  const handleCreateCycleSubmit = (e: React.FormEvent) => {
+  const handleCreateCycleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateCycleError('');
 
@@ -80,36 +87,36 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    mockDb.createCycle(createCycleForm.month, createCycleForm.year);
+    await dbService.createCycle(createCycleForm.month, createCycleForm.year);
     setIsCreateCycleModalOpen(false);
     refreshData();
   };
 
-  const updateStatus = (status: CycleStatus) => {
+  const updateStatus = async (status: CycleStatus) => {
     if (activeCycle) {
-      mockDb.updateCycleStatus(activeCycle.id, status);
+      await dbService.updateCycleStatus(activeCycle.id, status);
       refreshData();
     }
   };
 
-  const handleDeclareWinner = () => {
+  const handleDeclareWinner = async () => {
     if (!activeCycle || stats.length === 0) return;
     
     // Assumes stats are sorted by vote count desc
     const leader = stats[0];
     if (leader.voteCount > 0) {
-      mockDb.setCycleWinner(activeCycle.id, leader.nomineeId);
-      mockDb.updateCycleStatus(activeCycle.id, CycleStatus.CLOSED);
+      await dbService.setCycleWinner(activeCycle.id, leader.nomineeId);
+      await dbService.updateCycleStatus(activeCycle.id, CycleStatus.CLOSED);
       refreshData();
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!activeCycle) return;
     
     // Convert stats to CSV
     const headers = ['Nominee Name', 'Department', 'Nominations', 'Votes'];
-    const users = mockDb.getUsers();
+    const users = await dbService.getUsers();
     
     const rows = stats.map(s => {
       const u = users.find(user => user.id === s.nomineeId);
@@ -137,32 +144,33 @@ export const AdminDashboard: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleViewProfile = (user: User) => {
+  const handleViewProfile = async (user: User) => {
     setViewingUser(user);
-    setUserHistory(mockDb.getEmployeeHistory(user.id));
+    const history = await dbService.getEmployeeHistory(user.id);
+    setUserHistory(history);
   };
 
-  const handleUserUpdate = (e: React.FormEvent) => {
+  const handleUserUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingUser) {
-      mockDb.updateUser(editingUser);
+      await dbService.updateUser(editingUser);
       setIsEditModalOpen(false);
       setEditingUser(null);
       refreshData();
     }
   };
 
-  const toggleUserStatus = (user: User) => {
+  const toggleUserStatus = async (user: User) => {
     const newStatus = user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    mockDb.updateUser({ ...user, status: newStatus });
+    await dbService.updateUser({ ...user, status: newStatus });
     refreshData();
   };
 
-  const handleAddUserSubmit = (e: React.FormEvent) => {
+  const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddUserError('');
     try {
-      mockDb.addUser({
+      await dbService.addUser({
         name: newUser.name,
         email: newUser.email,
         department: newUser.department,
