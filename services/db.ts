@@ -8,7 +8,8 @@ import {
   where, 
   addDoc,
   getDoc,
-  writeBatch
+  writeBatch,
+  getCountFromServer
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
@@ -35,7 +36,36 @@ export const dbService = {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
   },
 
+  // Used for registering a new user linked to Firebase Auth UID
+  createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
+    // Check if this is the first user ever
+    const coll = collection(db, 'users');
+    const snapshot = await getCountFromServer(coll);
+    const isFirstUser = snapshot.data().count === 0;
+
+    const newUserRef = doc(db, 'users', uid);
+    const newUser: User = {
+      ...user,
+      id: uid,
+      role: isFirstUser ? UserRole.ADMIN : user.role, // First user is Admin
+      status: 'ACTIVE'
+    };
+    
+    // Remove password from Firestore storage if it exists in the object
+    if ('password' in newUser) {
+      delete newUser.password;
+    }
+
+    await setDoc(newUserRef, newUser);
+  },
+
+  // Kept for backward compatibility/admin usage, but updated logic
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
+    // This method generates an ID automatically. 
+    // Mainly used by Admin to add employees without them self-registering yet (shadow accounts).
+    // Note: Shadow accounts won't be able to login via Firebase Auth until they register/claim email.
+    // For now, we assume this creates a placeholder.
+    
     // Check for existing email
     const q = query(collection(db, 'users'), where("email", "==", user.email));
     const querySnapshot = await getDocs(q);
@@ -49,12 +79,20 @@ export const dbService = {
       id: newUserRef.id,
       status: 'ACTIVE'
     };
+    
+    // Remove password
+    if ('password' in newUser) {
+      delete newUser.password;
+    }
+
     await setDoc(newUserRef, newUser);
   },
 
   updateUser: async (user: User): Promise<void> => {
     const userRef = doc(db, 'users', user.id);
-    await updateDoc(userRef, { ...user });
+    const userData = { ...user };
+    if ('password' in userData) delete userData.password;
+    await updateDoc(userRef, userData);
   },
 
   getCycles: async (): Promise<Cycle[]> => {
@@ -63,19 +101,16 @@ export const dbService = {
   },
 
   getActiveCycle: async (): Promise<Cycle | undefined> => {
-    // Look for any cycle that is not closed
     const cyclesRef = collection(db, 'cycles');
     const snapshot = await getDocs(cyclesRef);
     const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
     
-    // Logic: Return the one that isn't closed, or the most recent one
     return cycles.find(c => c.status !== CycleStatus.CLOSED) || cycles.sort((a,b) => b.year - a.year || b.month - a.month)[0];
   },
 
   createCycle: async (month: number, year: number): Promise<Cycle> => {
     const batch = writeBatch(db);
     
-    // Close all other cycles
     const cyclesRef = collection(db, 'cycles');
     const snapshot = await getDocs(cyclesRef);
     snapshot.docs.forEach((doc) => {
@@ -84,7 +119,6 @@ export const dbService = {
       }
     });
 
-    // Create new cycle
     const newCycleRef = doc(collection(db, 'cycles'));
     const newCycle: Cycle = {
       id: newCycleRef.id,
@@ -182,14 +216,12 @@ export const dbService = {
   },
 
   getCycleStats: async (cycleId: string): Promise<CycleStats[]> => {
-    // Firestore joins are manual
     const nominations = await dbService.getNominations(cycleId);
     const votes = await dbService.getVotes(cycleId);
-    const employees = await dbService.getUsers(); // Fetch all users to map names
+    const employees = await dbService.getUsers();
 
     const statsMap = new Map<string, CycleStats>();
 
-    // Initialize for all employees who received at least one nomination
     nominations.forEach(nom => {
       if (!statsMap.has(nom.nomineeId)) {
         const emp = employees.find(e => e.id === nom.nomineeId);
@@ -206,7 +238,6 @@ export const dbService = {
       if (stat) stat.nominationCount++;
     });
 
-    // Count votes
     votes.forEach(vote => {
        if (!statsMap.has(vote.nomineeId)) {
          const emp = employees.find(e => e.id === vote.nomineeId);
@@ -227,7 +258,6 @@ export const dbService = {
   },
 
   getEmployeeHistory: async (userId: string) => {
-    // Manual join of cycles, nominations, and votes for a specific user
     const cycles = await dbService.getCycles();
     const allNominations = await getDocs(collection(db, 'nominations'));
     const nominations = allNominations.docs.map(d => d.data() as Nomination);

@@ -1,4 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { auth } from '../services/firebase';
 import { User, AuthState, UserRole } from '../types';
 import { dbService } from '../services/db';
 
@@ -15,59 +23,83 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user: null,
     isAuthenticated: false,
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadUser = async () => {
-      const storedUserId = localStorage.getItem('auth_user_id');
-      if (storedUserId) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
         try {
-          const user = await dbService.getUserById(storedUserId);
-          if (user) {
-            setState({ user, isAuthenticated: true });
+          // Fetch the user profile from Firestore
+          const userProfile = await dbService.getUserById(firebaseUser.uid);
+          
+          if (userProfile) {
+            setState({ 
+              user: userProfile, 
+              isAuthenticated: true 
+            });
+          } else {
+             // Handle case where auth exists but db profile doesn't
+             console.warn("Auth user found but no Firestore profile");
+             setState({ user: null, isAuthenticated: false });
           }
         } catch (error) {
-          console.error("Failed to restore session", error);
+          console.error("Error fetching user profile:", error);
+          setState({ user: null, isAuthenticated: false });
         }
+      } else {
+        setState({ user: null, isAuthenticated: false });
       }
-    };
-    loadUser();
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password?: string): Promise<boolean> => {
+    if (!password) return false;
     try {
-      const users = await dbService.getUsers();
-      // Note: In a real app with Firestore, you shouldn't fetch all users to check auth.
-      // You should use Firebase Auth. This maintains the existing logic structure.
-      const user = users.find(u => u.email === email && (!u.password || u.password === password));
-      
-      if (user) {
-        localStorage.setItem('auth_user_id', user.id);
-        setState({ user, isAuthenticated: true });
-        return true;
-      }
-      return false;
+      await signInWithEmailAndPassword(auth, email, password);
+      // State updates are handled by the onAuthStateChanged listener
+      return true;
     } catch (error) {
       console.error("Login failed", error);
-      return false;
+      throw error; // Propagate error to UI
     }
   };
 
   const register = async (data: Omit<User, 'id' | 'status' | 'role'>): Promise<boolean> => {
+    if (!data.password) throw new Error("Password is required");
     try {
-      await dbService.addUser({
-        ...data,
-        role: UserRole.EMPLOYEE // Default role for self-registration
+      // 1. Create Auth User
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      
+      // 2. Create Firestore Profile
+      // The role assignment logic (First user = Admin) happens in dbService.createUserProfile
+      await dbService.createUserProfile(userCredential.user.uid, {
+        name: data.name,
+        email: data.email,
+        department: data.department,
+        role: UserRole.EMPLOYEE // dbService might override this if it's the first user
       });
+
       return true;
     } catch (error) {
+      console.error("Registration failed", error);
       throw error;
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('auth_user_id');
-    setState({ user: null, isAuthenticated: false });
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
   };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-400">Loading application...</div>;
+  }
 
   return (
     <AuthContext.Provider value={{ ...state, login, register, logout }}>
