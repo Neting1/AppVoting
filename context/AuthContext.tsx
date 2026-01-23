@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
+  sendPasswordResetEmail,
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth } from '../services/firebase';
@@ -14,6 +15,7 @@ interface AuthContextType extends AuthState {
   login: (email: string, password?: string) => Promise<boolean>;
   register: (data: Omit<User, 'id' | 'status' | 'role'>) => Promise<boolean>;
   logout: () => void;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -147,12 +149,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const resetPassword = async (email: string): Promise<void> => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      console.error("Password reset failed", error);
+      throw error;
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-400">Loading application...</div>;
   }
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );
