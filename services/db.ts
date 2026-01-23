@@ -15,80 +15,109 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
-import { mockDb } from './mockDb';
 
 // Helper to handle Firestore permission errors gracefully
+// In a real app, we would handle this with specific UI feedback
 const safeGetDocs = async (q: any) => {
   try {
     return await getDocs(q);
   } catch (error: any) {
-    // Suppress permission errors in console to avoid noise
-    if (error.code !== 'permission-denied') {
-        console.warn("Firestore query failed:", error.code, error.message);
-    }
-    // Return an empty structure that resembles a snapshot to prevent crashes
+    console.error("Firestore operation failed:", error.code, error.message);
+    // Return empty snapshot-like object to prevents app crash
     return { empty: true, docs: [] };
   }
 };
 
+// Initial Users Data for Seeding
+const INITIAL_USERS: Omit<User, 'status'>[] = [
+  { id: 'admin_main', name: 'Administrator', email: 'admin@twinhill.com', role: UserRole.ADMIN, department: 'Management', password: 'password123' },
+  { id: 'emp_01', name: 'Emelia Quansah', email: 'emelia.quansah@twinhill.com', role: UserRole.EMPLOYEE, department: 'Human Resources', password: 'password123' },
+  { id: 'emp_02', name: 'Williams Agyei Frimpong', email: 'williams.frimpong@twinhill.com', role: UserRole.EMPLOYEE, department: 'Engineering', password: 'password123' },
+  { id: 'emp_03', name: 'Danso Dominic', email: 'danso.dominic@twinhill.com', role: UserRole.EMPLOYEE, department: 'Operations', password: 'password123' },
+  { id: 'emp_04', name: 'Emmanuel Ayimbilla', email: 'emmanuel.ayimbilla@twinhill.com', role: UserRole.EMPLOYEE, department: 'Finance', password: 'password123' },
+  { id: 'emp_05', name: 'Vincent Owusu Peprah', email: 'vincent.peprah@twinhill.com', role: UserRole.EMPLOYEE, department: 'IT Support', password: 'password123' },
+  { id: 'emp_06', name: 'John Amponey', email: 'john.amponey@twinhill.com', role: UserRole.EMPLOYEE, department: 'Logistics', password: 'password123' },
+  { id: 'emp_07', name: 'Akosua Ampomah', email: 'akosua.ampomah@twinhill.com', role: UserRole.EMPLOYEE, department: 'Marketing', password: 'password123' },
+  { id: 'emp_08', name: 'Harriet Dwomoh', email: 'harriet.dwomoh@twinhill.com', role: UserRole.EMPLOYEE, department: 'Customer Service', password: 'password123' },
+  { id: 'emp_09', name: 'Atta Sammy', email: 'atta.sammy@twinhill.com', role: UserRole.EMPLOYEE, department: 'Sales', password: 'password123' },
+  { id: 'emp_10', name: 'Phillip Boansi', email: 'phillip.boansi@twinhill.com', role: UserRole.EMPLOYEE, department: 'Engineering', password: 'password123' },
+  { id: 'emp_11', name: 'Isaac Owusu Ansah', email: 'isaac.ansah@twinhill.com', role: UserRole.EMPLOYEE, department: 'Operations', password: 'password123' },
+  { id: 'emp_12', name: 'Abubakar Alhassan', email: 'abubakar.alhassan@twinhill.com', role: UserRole.EMPLOYEE, department: 'Security', password: 'password123' },
+  { id: 'emp_13', name: 'Martha Mensah', email: 'martha.mensah@twinhill.com', role: UserRole.EMPLOYEE, department: 'Administration', password: 'password123' },
+  { id: 'emp_14', name: 'Richard Kusi Amoah', email: 'richard.amoah@twinhill.com', role: UserRole.EMPLOYEE, department: 'Legal', password: 'password123' },
+  { id: 'emp_15', name: 'Abugre Francis', email: 'abugre.francis@twinhill.com', role: UserRole.EMPLOYEE, department: 'Production', password: 'password123' },
+  { id: 'emp_16', name: 'Alberta Mba', email: 'alberta.mba@twinhill.com', role: UserRole.EMPLOYEE, department: 'Quality Assurance', password: 'password123' },
+  { id: 'emp_17', name: 'Cosmos Owusu', email: 'cosmos.owusu@twinhill.com', role: UserRole.EMPLOYEE, department: 'Procurement', password: 'password123' },
+  { id: 'emp_18', name: 'Kingsley Ayisi', email: 'kingsley.ayisi@twinhill.com', role: UserRole.EMPLOYEE, department: 'Research', password: 'password123' }
+];
+
 // Database Service with Firestore
 export const dbService = {
-  getUsers: async (): Promise<User[]> => {
-    // Fetch local users
-    const localUsers = mockDb.getUsers();
-    
+  seedInitialUsers: async (): Promise<void> => {
     try {
-      // Fetch remote users
-      const snapshot = await safeGetDocs(collection(db, 'users'));
-      const remoteUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      const userColl = collection(db, 'users');
+      const snapshot = await getCountFromServer(userColl);
+      if (snapshot.data().count > 0) return;
+
+      console.log("Seeding initial users to Firestore...");
+      const batch = writeBatch(db);
       
-      // Merge users. If IDs clash (unlikely), prioritize local users as they might have recent edits.
-      const userMap = new Map<string, User>();
-      remoteUsers.forEach(u => userMap.set(u.id, u));
-      localUsers.forEach(u => userMap.set(u.id, u));
-      
-      return Array.from(userMap.values());
+      INITIAL_USERS.forEach(user => {
+        const userRef = doc(userColl, user.id);
+        const userData: User = { ...user, status: 'ACTIVE' };
+        if ('password' in userData) delete userData.password;
+        batch.set(userRef, userData);
+      });
+
+      await batch.commit();
     } catch (e) {
-      // If Firestore fails, return local users
-      return localUsers;
+      console.error("Failed to seed users", e);
+    }
+  },
+
+  getUsers: async (): Promise<User[]> => {
+    try {
+      const snapshot = await safeGetDocs(collection(db, 'users'));
+      if (snapshot.empty) {
+        await dbService.seedInitialUsers();
+        // Retry fetch after seeding attempt
+        const retrySnapshot = await safeGetDocs(collection(db, 'users'));
+        return retrySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      }
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    } catch (e) {
+      console.error("Error getting users:", e);
+      return [];
     }
   },
   
   getUserById: async (id: string): Promise<User | undefined> => {
-    // Check local mock DB first
-    const localUser = mockDb.getUserById(id);
-    if (localUser) return localUser;
-
-    const docRef = doc(db, 'users', id);
     try {
+      const docRef = doc(db, 'users', id);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         return { id: docSnap.id, ...docSnap.data() } as User;
       }
     } catch (error) {
-      // Ignore permission errors during profile fetch
+      console.error("Error getting user profile:", error);
     }
     return undefined;
   },
 
   getEmployees: async (): Promise<User[]> => {
-    // Use the merged list from getUsers
     const users = await dbService.getUsers();
     return users.filter(u => u.role === UserRole.EMPLOYEE);
   },
 
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
-    // This is used by Register page, still attempts Firestore for real auth users
     let role = user.role;
     try {
+      // If first user in DB, make admin
       const coll = collection(db, 'users');
       const snapshot = await getCountFromServer(coll);
-      const isFirstUser = snapshot.data().count === 0;
-      if (isFirstUser) {
-        role = UserRole.ADMIN;
-      }
+      if (snapshot.data().count === 0) role = UserRole.ADMIN;
     } catch (error) {
-      // Silently ignore permission errors for count()
+      console.warn("Could not check user count", error);
     }
 
     const newUserRef = doc(db, 'users', uid);
@@ -98,27 +127,30 @@ export const dbService = {
       role: role,
       status: 'ACTIVE'
     };
-    
-    if ('password' in newUser) {
-      delete newUser.password;
-    }
+    if ('password' in newUser) delete newUser.password;
 
     await setDoc(newUserRef, newUser);
   },
 
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
-    // Use local mockDb for Admin 'Add Employee' to bypass Firestore permission errors
-    mockDb.addUser(user);
+    // Check for email existence in current list to avoid dupes (client-side check for efficiency)
+    const existingUsers = await dbService.getUsers();
+    if (existingUsers.find(u => u.email === user.email)) {
+        throw new Error("User with this email already exists");
+    }
+
+    const newUserRef = doc(collection(db, 'users'));
+    const newUser: User = {
+      ...user,
+      id: newUserRef.id,
+      status: 'ACTIVE'
+    };
+    if ('password' in newUser) delete newUser.password;
+
+    await setDoc(newUserRef, newUser);
   },
 
   updateUser: async (user: User): Promise<void> => {
-    // Check if it is a local user first
-    const localUser = mockDb.getUserById(user.id);
-    if (localUser) {
-        mockDb.updateUser(user);
-        return;
-    }
-
     const userRef = doc(db, 'users', user.id);
     const userData = { ...user };
     if ('password' in userData) delete userData.password;
@@ -126,102 +158,95 @@ export const dbService = {
   },
 
   getCycles: async (): Promise<Cycle[]> => {
-    // Merge remote and local cycles
-    const localCycles = mockDb.getCycles();
-
     try {
       const snapshot = await safeGetDocs(collection(db, 'cycles'));
-      const remoteCycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
-      
-      const cycleMap = new Map<string, Cycle>();
-      remoteCycles.forEach(c => cycleMap.set(c.id, c));
-      localCycles.forEach(c => cycleMap.set(c.id, c));
-      
-      return Array.from(cycleMap.values());
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
     } catch (e) {
-      return localCycles;
+      console.error("Error getting cycles", e);
+      return [];
     }
   },
 
   getActiveCycle: async (): Promise<Cycle | undefined> => {
-    // Check local mock DB first
-    const localCycle = mockDb.getActiveCycle();
-    if (localCycle && localCycle.status !== CycleStatus.CLOSED) {
-        return localCycle;
-    }
-
     try {
-      const qNom = query(collection(db, 'cycles'), where("status", "==", CycleStatus.NOMINATION));
-      const snapNom = await safeGetDocs(qNom);
-      if (!snapNom.empty) return { id: snapNom.docs[0].id, ...snapNom.docs[0].data() } as Cycle;
+      // Fetch all cycles to avoid composite index requirement errors
+      // In a large system, this would be paginated or indexed, but for <100 cycles it's fine.
+      const snapshot = await safeGetDocs(collection(db, 'cycles'));
+      if (snapshot.empty) return undefined;
+      
+      const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+      
+      // 1. Check for Nomination
+      const nominationCycle = cycles.find(c => c.status === CycleStatus.NOMINATION);
+      if (nominationCycle) return nominationCycle;
 
-      const qVote = query(collection(db, 'cycles'), where("status", "==", CycleStatus.VOTING));
-      const snapVote = await safeGetDocs(qVote);
-      if (!snapVote.empty) return { id: snapVote.docs[0].id, ...snapVote.docs[0].data() } as Cycle;
+      // 2. Check for Voting
+      const votingCycle = cycles.find(c => c.status === CycleStatus.VOTING);
+      if (votingCycle) return votingCycle;
 
-      const qClosed = query(
-          collection(db, 'cycles'), 
-          where("status", "==", CycleStatus.CLOSED), 
-          orderBy("year", "desc"), 
-          orderBy("month", "desc"), 
-          limit(1)
-      );
-      try {
-          const snapClosed = await getDocs(qClosed);
-          if (!snapClosed.empty) return { id: snapClosed.docs[0].id, ...snapClosed.docs[0].data() } as Cycle;
-      } catch (e) {
-          // ignore index errors
-      }
+      // 3. Get most recent Closed
+      // Sort descending by year then month
+      cycles.sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+      });
+      
+      // Return the most recent one
+      return cycles[0];
     } catch (error) {
-      // Ignore errors
+      console.error("Error fetching active cycle", error);
+      return undefined;
     }
-    return undefined;
   },
 
   createCycle: async (month: number, year: number): Promise<Cycle> => {
-    // Use local storage (mockDb) for cycle creation
-    return mockDb.createCycle(month, year);
+    // 1. Close any open cycles first (Best effort)
+    try {
+        const snapshot = await safeGetDocs(collection(db, 'cycles'));
+        const batch = writeBatch(db);
+        let updates = 0;
+        
+        snapshot.docs.forEach(d => {
+            const data = d.data();
+            if (data.status === CycleStatus.NOMINATION || data.status === CycleStatus.VOTING) {
+                batch.update(d.ref, { status: CycleStatus.CLOSED });
+                updates++;
+            }
+        });
+        
+        if (updates > 0) await batch.commit();
+    } catch (e) {
+        console.warn("Could not auto-close previous cycles", e);
+    }
+
+    // 2. Create new cycle in Firestore
+    const cycleData = {
+      month,
+      year,
+      status: CycleStatus.NOMINATION
+    };
+    
+    const docRef = await addDoc(collection(db, 'cycles'), cycleData);
+    return { id: docRef.id, ...cycleData } as Cycle;
   },
 
   updateCycleStatus: async (cycleId: string, status: CycleStatus): Promise<void> => {
-    const localCycles = mockDb.getCycles();
-    if (localCycles.find(c => c.id === cycleId)) {
-        mockDb.updateCycleStatus(cycleId, status);
-        return;
-    }
-
     const cycleRef = doc(db, 'cycles', cycleId);
     await updateDoc(cycleRef, { status });
   },
 
   setCycleWinner: async (cycleId: string, winnerId: string): Promise<void> => {
-    const localCycles = mockDb.getCycles();
-    if (localCycles.find(c => c.id === cycleId)) {
-        mockDb.setCycleWinner(cycleId, winnerId);
-        return;
-    }
-
     const cycleRef = doc(db, 'cycles', cycleId);
     await updateDoc(cycleRef, { winnerId });
   },
 
   getNominations: async (cycleId: string): Promise<Nomination[]> => {
-    // If cycle is local, use local nominations
-    const localCycles = mockDb.getCycles();
-    if (localCycles.some(c => c.id === cycleId)) {
-        return mockDb.getNominations(cycleId);
-    }
-
     const q = query(collection(db, 'nominations'), where("cycleId", "==", cycleId));
     const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Nomination));
   },
 
   getUserNomination: async (userId: string, cycleId: string): Promise<Nomination | undefined> => {
-    // Check local first
-    const localNom = mockDb.getUserNomination(userId, cycleId);
-    if (localNom) return localNom;
-
     const q = query(
       collection(db, 'nominations'), 
       where("nominatorId", "==", userId),
@@ -240,15 +265,6 @@ export const dbService = {
       throw new Error("You have already nominated someone this cycle.");
     }
     
-    // Check if we should use local storage (if cycle is local)
-    const localCycles = mockDb.getCycles();
-    const isLocalCycle = localCycles.some(c => c.id === cycleId);
-
-    if (isLocalCycle) {
-       mockDb.addNomination(nominatorId, nomineeId, cycleId, reason);
-       return;
-    }
-
     const nomData = {
       nominatorId,
       nomineeId,
@@ -260,20 +276,12 @@ export const dbService = {
   },
 
   getVotes: async (cycleId: string): Promise<Vote[]> => {
-    const localCycles = mockDb.getCycles();
-    if (localCycles.some(c => c.id === cycleId)) {
-        return mockDb.getVotes(cycleId);
-    }
-
     const q = query(collection(db, 'votes'), where("cycleId", "==", cycleId));
     const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
   },
 
   getUserVote: async (userId: string, cycleId: string): Promise<Vote | undefined> => {
-    const localVote = mockDb.getUserVote(userId, cycleId);
-    if (localVote) return localVote;
-
     const q = query(
       collection(db, 'votes'), 
       where("voterId", "==", userId),
@@ -292,15 +300,6 @@ export const dbService = {
       throw new Error("You have already voted this cycle.");
     }
 
-    // Check if cycle is local
-    const localCycles = mockDb.getCycles();
-    const isLocalCycle = localCycles.some(c => c.id === cycleId);
-    
-    if (isLocalCycle) {
-        mockDb.addVote(voterId, nomineeId, cycleId);
-        return;
-    }
-
     const voteData = {
       voterId,
       nomineeId,
@@ -311,12 +310,6 @@ export const dbService = {
   },
 
   getCycleStats: async (cycleId: string): Promise<CycleStats[]> => {
-    // Check if local cycle
-    const localCycles = mockDb.getCycles();
-    if (localCycles.some(c => c.id === cycleId)) {
-        return mockDb.getCycleStats(cycleId);
-    }
-
     try {
         const nominations = await dbService.getNominations(cycleId);
         const votes = await dbService.getVotes(cycleId);
@@ -365,46 +358,26 @@ export const dbService = {
   getEmployeeHistory: async (userId: string) => {
     try {
         const cycles = await dbService.getCycles();
-        // Since we are hybrid, complex history queries are harder.
-        // We will attempt to get data from both sources loosely.
         
         let nominations: Nomination[] = [];
         let votes: Vote[] = [];
         
-        // Fetch remote
         try {
             const nomSnap = await safeGetDocs(collection(db, 'nominations'));
             nominations = nomSnap.docs.map(d => d.data() as Nomination);
             const voteSnap = await safeGetDocs(collection(db, 'votes'));
             votes = voteSnap.docs.map(d => d.data() as Vote);
         } catch(e) {
-            // ignore
+            console.error("Error fetching history data", e);
         }
-        
-        // Fetch local
-        // (mockDb helpers return filtered lists, but here we want ALL for history)
-        // Accessing underlying storage from mockDb isn't exposed directly as 'all', 
-        // but we can assume for this simple fix we primarily care about active cycles
-        // or just accept remote history + current local cycle data if we added an accessor.
-        // For now, let's rely on what we have.
         
         const users = await dbService.getUsers();
 
         return cycles.map(cycle => {
-            // If cycle is local, try to fetch specific local data for it
-            let cycleNoms = nominations;
-            let cycleVotes = votes;
-            
-            const isLocal = mockDb.getCycles().some(c => c.id === cycle.id);
-            if (isLocal) {
-                cycleNoms = mockDb.getNominations(cycle.id);
-                cycleVotes = mockDb.getVotes(cycle.id);
-            }
-
-            const myNomination = cycleNoms.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
-            const myVote = cycleVotes.find(v => v.cycleId === cycle.id && v.voterId === userId);
-            const receivedNoms = cycleNoms.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
-            const receivedVotes = cycleVotes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
+            const myNomination = nominations.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
+            const myVote = votes.find(v => v.cycleId === cycle.id && v.voterId === userId);
+            const receivedNoms = nominations.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
+            const receivedVotes = votes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
 
             const nomineeName = myNomination ? users.find(u => u.id === myNomination.nomineeId)?.name || 'Unknown' : undefined;
             
