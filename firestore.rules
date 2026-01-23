@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && getUserData().role == 'ADMIN';
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      // Allow authenticated users to read the employee directory (required for nominations)
+      allow read: if isSignedIn();
+      
+      // Allow creating users:
+      // 1. User registering themselves (auth.uid == userId)
+      // 2. Admin creating employees (addUser)
+      // 3. Initial seeding (allow isSignedIn() generally for this demo context)
+      allow create: if isSignedIn();
+      
+      // Allow Admin to update any user (e.g. deactivate)
+      // Allow users to update their own profile
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+    }
+
+    // Cycles Collection
+    match /cycles/{cycleId} {
+      // All authenticated users can see the active cycle status
+      allow read: if isSignedIn();
+      // Only admins can manage cycles (create, close, set winner)
+      allow write: if isAdmin();
+    }
+
+    // Nominations Collection
+    match /nominations/{nominationId} {
+      // Users need to read nominations to calculate the candidate list in Vote.tsx
+      allow read: if isSignedIn();
+      
+      // Users can only nominate on their own behalf
+      allow create: if isSignedIn() && request.resource.data.nominatorId == request.auth.uid;
+      
+      // Only admin can delete or manage nominations
+      allow write: if isAdmin();
+    }
+
+    // Votes Collection
+    match /votes/{voteId} {
+      // Admins can see all votes (for stats).
+      // Users can ONLY see their own vote (to confirm they voted).
+      allow read: if isAdmin() || (isSignedIn() && resource.data.voterId == request.auth.uid);
+      
+      // Users can only cast their own vote
+      allow create: if isSignedIn() && request.resource.data.voterId == request.auth.uid;
+    }
+  }
+}

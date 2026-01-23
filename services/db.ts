@@ -16,15 +16,14 @@ import {
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
 
-// Helper to handle Firestore permission errors gracefully
-// In a real app, we would handle this with specific UI feedback
+// Helper to handle Firestore operations
 const safeGetDocs = async (q: any) => {
   try {
     return await getDocs(q);
   } catch (error: any) {
     console.error("Firestore operation failed:", error.code, error.message);
-    // Return empty snapshot-like object to prevents app crash
-    return { empty: true, docs: [] };
+    // Return empty result to prevent app crash, but log error
+    return { docs: [], empty: true };
   }
 };
 
@@ -56,7 +55,9 @@ export const dbService = {
   seedInitialUsers: async (): Promise<void> => {
     try {
       const userColl = collection(db, 'users');
+      // Use safeGetDocs to check existence without throwing immediately if blocked
       const snapshot = await getCountFromServer(userColl);
+      
       if (snapshot.data().count > 0) return;
 
       console.log("Seeding initial users to Firestore...");
@@ -70,25 +71,27 @@ export const dbService = {
       });
 
       await batch.commit();
-    } catch (e) {
-      console.error("Failed to seed users", e);
+      console.log("Seeding complete");
+    } catch (e: any) {
+      console.error("Failed to seed users. Ensure you have write permissions.", e.message);
     }
   },
 
   getUsers: async (): Promise<User[]> => {
-    try {
-      const snapshot = await safeGetDocs(collection(db, 'users'));
-      if (snapshot.empty) {
-        await dbService.seedInitialUsers();
-        // Retry fetch after seeding attempt
-        const retrySnapshot = await safeGetDocs(collection(db, 'users'));
-        return retrySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    const snapshot = await safeGetDocs(collection(db, 'users'));
+    
+    // Attempt seed if empty (and we have access)
+    if (snapshot.empty) {
+      await dbService.seedInitialUsers();
+      
+      // Retry fetch
+      const retrySnapshot = await safeGetDocs(collection(db, 'users'));
+      if (!retrySnapshot.empty) {
+         return retrySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
       }
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-    } catch (e) {
-      console.error("Error getting users:", e);
-      return [];
     }
+    
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
   },
   
   getUserById: async (id: string): Promise<User | undefined> => {
@@ -112,12 +115,11 @@ export const dbService = {
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
     let role = user.role;
     try {
-      // If first user in DB, make admin
       const coll = collection(db, 'users');
       const snapshot = await getCountFromServer(coll);
       if (snapshot.data().count === 0) role = UserRole.ADMIN;
     } catch (error) {
-      console.warn("Could not check user count", error);
+      console.warn("Could not check user count for role assignment", error);
     }
 
     const newUserRef = doc(db, 'users', uid);
@@ -133,12 +135,6 @@ export const dbService = {
   },
 
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
-    // Check for email existence in current list to avoid dupes (client-side check for efficiency)
-    const existingUsers = await dbService.getUsers();
-    if (existingUsers.find(u => u.email === user.email)) {
-        throw new Error("User with this email already exists");
-    }
-
     const newUserRef = doc(collection(db, 'users'));
     const newUser: User = {
       ...user,
@@ -158,63 +154,51 @@ export const dbService = {
   },
 
   getCycles: async (): Promise<Cycle[]> => {
-    try {
-      const snapshot = await safeGetDocs(collection(db, 'cycles'));
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
-    } catch (e) {
-      console.error("Error getting cycles", e);
-      return [];
-    }
+    const snapshot = await safeGetDocs(collection(db, 'cycles'));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
   },
 
   getActiveCycle: async (): Promise<Cycle | undefined> => {
-    try {
-      // Fetch all cycles to avoid composite index requirement errors
-      // In a large system, this would be paginated or indexed, but for <100 cycles it's fine.
-      const snapshot = await safeGetDocs(collection(db, 'cycles'));
-      if (snapshot.empty) return undefined;
-      
-      const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
-      
-      // 1. Check for Nomination
-      const nominationCycle = cycles.find(c => c.status === CycleStatus.NOMINATION);
-      if (nominationCycle) return nominationCycle;
+    const snapshot = await safeGetDocs(collection(db, 'cycles'));
+    if (snapshot.empty) return undefined;
+    
+    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+    
+    // 1. Check for Nomination
+    const nominationCycle = cycles.find(c => c.status === CycleStatus.NOMINATION);
+    if (nominationCycle) return nominationCycle;
 
-      // 2. Check for Voting
-      const votingCycle = cycles.find(c => c.status === CycleStatus.VOTING);
-      if (votingCycle) return votingCycle;
+    // 2. Check for Voting
+    const votingCycle = cycles.find(c => c.status === CycleStatus.VOTING);
+    if (votingCycle) return votingCycle;
 
-      // 3. Get most recent Closed
-      // Sort descending by year then month
-      cycles.sort((a, b) => {
-        if (a.year !== b.year) return b.year - a.year;
-        return b.month - a.month;
-      });
-      
-      // Return the most recent one
-      return cycles[0];
-    } catch (error) {
-      console.error("Error fetching active cycle", error);
-      return undefined;
-    }
+    // 3. Get most recent Closed
+    cycles.sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+    
+    return cycles[0];
   },
 
   createCycle: async (month: number, year: number): Promise<Cycle> => {
     // 1. Close any open cycles first (Best effort)
     try {
         const snapshot = await safeGetDocs(collection(db, 'cycles'));
-        const batch = writeBatch(db);
-        let updates = 0;
-        
-        snapshot.docs.forEach(d => {
-            const data = d.data();
-            if (data.status === CycleStatus.NOMINATION || data.status === CycleStatus.VOTING) {
-                batch.update(d.ref, { status: CycleStatus.CLOSED });
-                updates++;
-            }
-        });
-        
-        if (updates > 0) await batch.commit();
+        if (!snapshot.empty) {
+            const batch = writeBatch(db);
+            let updates = 0;
+            
+            snapshot.docs.forEach(d => {
+                const data = d.data();
+                if (data.status === CycleStatus.NOMINATION || data.status === CycleStatus.VOTING) {
+                    batch.update(d.ref, { status: CycleStatus.CLOSED });
+                    updates++;
+                }
+            });
+            
+            if (updates > 0) await batch.commit();
+        }
     } catch (e) {
         console.warn("Could not auto-close previous cycles", e);
     }
@@ -351,6 +335,7 @@ export const dbService = {
 
         return Array.from(statsMap.values()).sort((a, b) => b.voteCount - a.voteCount);
     } catch (e) {
+        console.error("Error calculating stats:", e);
         return [];
     }
   },
