@@ -36,7 +36,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       <div className="md:hidden bg-white shadow-sm p-4 flex justify-between items-center z-20">
         <div className="flex items-center font-bold text-indigo-600">
           <Medal className="w-6 h-6 mr-2" />
-          <span>EOTM Platform</span>
+          <span>Twinhill Enterprise</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -50,7 +50,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       >
         <div className="p-6 border-b border-gray-100 hidden md:flex items-center">
           <Medal className="w-8 h-8 text-indigo-600 mr-3" />
-          <h1 className="text-xl font-bold text-gray-900">EOTM</h1>
+          <h1 className="text-xl font-bold text-gray-900">Twinhill Enterprise</h1>
         </div>
 
         <div className="p-6 border-b border-gray-100 bg-indigo-50/50">

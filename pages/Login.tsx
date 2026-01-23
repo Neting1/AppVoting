@@ -37,8 +37,8 @@ export const Login: React.FC = () => {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/20 mb-4 backdrop-blur-sm">
             <Medal className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Employee of the Month</h1>
-          <p className="text-indigo-100 mt-2 font-medium">Nomination & Voting Platform</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Twinhill Enterprise</h1>
+          <p className="text-indigo-100 mt-2 font-medium">Employee Nomination Platform</p>
         </div>
 
         <div className="p-8">

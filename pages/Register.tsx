@@ -61,7 +61,7 @@ export const Register: React.FC = () => {
             <UserPlus className="w-6 h-6 text-white" />
           </div>
           <h1 className="text-xl font-bold text-white tracking-tight">Create Account</h1>
-          <p className="text-indigo-100 text-sm mt-1">Join the Employee Nomination Platform</p>
+          <p className="text-indigo-100 text-sm mt-1">Join Twinhill Enterprise</p>
         </div>
 
         <div className="p-8">
