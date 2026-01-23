@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
-import { LogOut, LayoutDashboard, UserCheck, Vote, Medal, Menu, X } from 'lucide-react';
+import { LogOut, LayoutDashboard, UserCheck, Vote, Medal, Menu, X, Shield } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -70,16 +70,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
             
             {user.role === UserRole.ADMIN && (
-              <NavItem to="/admin" icon={UserCheck} label="Admin Panel" />
+              <NavItem to="/admin" icon={Shield} label="Admin Panel" />
             )}
             
-            <div className="pt-4 mt-4 border-t border-gray-100">
-              <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                Actions
-              </p>
-              <NavItem to="/nominate" icon={UserCheck} label="Nominate" />
-              <NavItem to="/vote" icon={Vote} label="Vote" />
-            </div>
+            {user.role === UserRole.EMPLOYEE && (
+              <div className="pt-4 mt-4 border-t border-gray-100">
+                <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Actions
+                </p>
+                <NavItem to="/nominate" icon={UserCheck} label="Nominate" />
+                <NavItem to="/vote" icon={Vote} label="Vote" />
+              </div>
+            )}
           </div>
         </nav>
 

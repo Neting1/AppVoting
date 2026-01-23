@@ -28,6 +28,10 @@ export interface Cycle {
   year: number;
   status: CycleStatus;
   winnerId?: string;
+  nominationStart: number;
+  nominationEnd: number;
+  votingStart: number;
+  votingEnd: number;
 }
 
 export interface Nomination {

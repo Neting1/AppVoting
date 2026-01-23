@@ -162,26 +162,49 @@ export const dbService = {
     const snapshot = await safeGetDocs(collection(db, 'cycles'));
     if (snapshot.empty) return undefined;
     
+    // Find the relevant cycle (most recent created)
     const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
-    
-    // 1. Check for Nomination
-    const nominationCycle = cycles.find(c => c.status === CycleStatus.NOMINATION);
-    if (nominationCycle) return nominationCycle;
-
-    // 2. Check for Voting
-    const votingCycle = cycles.find(c => c.status === CycleStatus.VOTING);
-    if (votingCycle) return votingCycle;
-
-    // 3. Get most recent Closed
     cycles.sort((a, b) => {
-      if (a.year !== b.year) return b.year - a.year;
-      return b.month - a.month;
+      // Sort by status priority (Nom/Vote > Closed) then date
+      const scoreA = (a.status !== CycleStatus.CLOSED ? 2 : 1) * 100000 + (a.year * 12 + a.month);
+      const scoreB = (b.status !== CycleStatus.CLOSED ? 2 : 1) * 100000 + (b.year * 12 + b.month);
+      return scoreB - scoreA;
     });
-    
-    return cycles[0];
+
+    const activeCycle = cycles[0];
+    if (!activeCycle) return undefined;
+
+    // Automatic Status Updates based on Dates
+    const now = Date.now();
+    let newStatus = activeCycle.status;
+    let needsUpdate = false;
+
+    // We only automate active cycle logic if dates are present
+    if (activeCycle.nominationStart && activeCycle.votingEnd) {
+      if (now >= activeCycle.votingEnd && activeCycle.status !== CycleStatus.CLOSED) {
+        newStatus = CycleStatus.CLOSED;
+        needsUpdate = true;
+      } else if (now >= activeCycle.nominationEnd && now < activeCycle.votingEnd && activeCycle.status === CycleStatus.NOMINATION) {
+        newStatus = CycleStatus.VOTING;
+        needsUpdate = true;
+      } else if (now < activeCycle.nominationEnd && activeCycle.status !== CycleStatus.NOMINATION && activeCycle.status !== CycleStatus.CLOSED) {
+         // This case handles if we somehow went back in time, or logic correction, but mainly:
+         // If it's VOTING but actually time is Nomination time (e.g. admin edited dates)
+         newStatus = CycleStatus.NOMINATION;
+         needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      const cycleRef = doc(db, 'cycles', activeCycle.id);
+      await updateDoc(cycleRef, { status: newStatus });
+      activeCycle.status = newStatus;
+    }
+
+    return activeCycle;
   },
 
-  createCycle: async (month: number, year: number): Promise<Cycle> => {
+  createCycle: async (month: number, year: number, dates: {nomStart: number, nomEnd: number, voteStart: number, voteEnd: number}): Promise<Cycle> => {
     // 1. Close any open cycles first (Best effort)
     try {
         const snapshot = await safeGetDocs(collection(db, 'cycles'));
@@ -207,7 +230,11 @@ export const dbService = {
     const cycleData = {
       month,
       year,
-      status: CycleStatus.NOMINATION
+      status: CycleStatus.NOMINATION,
+      nominationStart: dates.nomStart,
+      nominationEnd: dates.nomEnd,
+      votingStart: dates.voteStart,
+      votingEnd: dates.voteEnd
     };
     
     const docRef = await addDoc(collection(db, 'cycles'), cycleData);

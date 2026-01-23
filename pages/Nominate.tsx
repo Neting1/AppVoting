@@ -48,6 +48,12 @@ export const Nominate: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user) return;
     
+    // Safety check for date time before submitting
+    if (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd) {
+        setError("The nomination period has ended.");
+        return;
+    }
+
     try {
       await dbService.addNomination(user.id, selectedNominee, activeCycle.id, reason);
       setSuccess(true);
@@ -61,7 +67,12 @@ export const Nominate: React.FC = () => {
     return <div className="p-8 text-center text-gray-500">Loading...</div>;
   }
 
-  if (!activeCycle || activeCycle.status !== CycleStatus.NOMINATION) {
+  // Strict check on status AND time if provided
+  const isClosed = !activeCycle || 
+                   activeCycle.status !== CycleStatus.NOMINATION || 
+                   (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd);
+
+  if (isClosed) {
     return (
       <div className="text-center py-16">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">

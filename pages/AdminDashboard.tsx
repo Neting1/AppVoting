@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { dbService } from '../services/db';
 import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock } from 'lucide-react';
+import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock } from 'lucide-react';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -18,7 +18,11 @@ export const AdminDashboard: React.FC = () => {
   const [isCreateCycleModalOpen, setIsCreateCycleModalOpen] = useState(false);
   const [createCycleForm, setCreateCycleForm] = useState({
     month: new Date().getMonth(),
-    year: new Date().getFullYear()
+    year: new Date().getFullYear(),
+    nominationStart: '',
+    nominationEnd: '',
+    votingStart: '',
+    votingEnd: ''
   });
   const [createCycleError, setCreateCycleError] = useState('');
 
@@ -80,7 +84,25 @@ export const AdminDashboard: React.FC = () => {
 
   const handleOpenCreateCycle = () => {
     const now = new Date();
-    setCreateCycleForm({ month: now.getMonth(), year: now.getFullYear() });
+    // Default dates: Nom starts now, ends in 7 days. Vote starts 7 days, ends 14 days.
+    const nomEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const voteStart = nomEnd;
+    const voteEnd = new Date(nomEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
+    // Format for datetime-local: YYYY-MM-DDTHH:mm
+    const toLocalISO = (d: Date) => {
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
+    setCreateCycleForm({ 
+        month: now.getMonth(), 
+        year: now.getFullYear(),
+        nominationStart: toLocalISO(now),
+        nominationEnd: toLocalISO(nomEnd),
+        votingStart: toLocalISO(voteStart),
+        votingEnd: toLocalISO(voteEnd)
+    });
     setCreateCycleError('');
     setIsCreateCycleModalOpen(true);
   };
@@ -89,10 +111,37 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     setCreateCycleError('');
 
-    // Removed restriction for future dates to allow admins to prepare cycles in advance.
+    // Validate: Ensure no active cycle exists
+    if (activeCycle && activeCycle.status !== CycleStatus.CLOSED) {
+        setCreateCycleError("Cannot create a new cycle while the current cycle is still active. Please close it first.");
+        return;
+    }
+
+    // Validate Dates
+    const nomStart = new Date(createCycleForm.nominationStart).getTime();
+    const nomEnd = new Date(createCycleForm.nominationEnd).getTime();
+    const voteStart = new Date(createCycleForm.votingStart).getTime();
+    const voteEnd = new Date(createCycleForm.votingEnd).getTime();
+
+    if (nomEnd <= nomStart) {
+        setCreateCycleError("Nomination end date must be after start date.");
+        return;
+    }
+    if (voteStart < nomEnd) {
+        setCreateCycleError("Voting must start after nomination ends.");
+        return;
+    }
+    if (voteEnd <= voteStart) {
+        setCreateCycleError("Voting end date must be after voting start date.");
+        return;
+    }
     
     try {
-        await dbService.createCycle(createCycleForm.month, createCycleForm.year);
+        await dbService.createCycle(
+            createCycleForm.month, 
+            createCycleForm.year,
+            { nomStart, nomEnd, voteStart, voteEnd }
+        );
         setIsCreateCycleModalOpen(false);
         refreshData();
     } catch (e: any) {
@@ -271,7 +320,13 @@ export const AdminDashboard: React.FC = () => {
         <div className="flex gap-2">
           <button 
             onClick={handleOpenCreateCycle}
-            className="flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold shadow-sm transition-all active:scale-95"
+            disabled={!!activeCycle && activeCycle.status !== CycleStatus.CLOSED}
+            className={`flex items-center px-5 py-2.5 text-white rounded-lg text-sm font-semibold shadow-sm transition-all ${
+              activeCycle && activeCycle.status !== CycleStatus.CLOSED
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
+            }`}
+            title={activeCycle && activeCycle.status !== CycleStatus.CLOSED ? "Close current cycle to start a new one" : "Start New Cycle"}
           >
             <Plus className="w-4 h-4 mr-2" />
             New Cycle
@@ -295,6 +350,17 @@ export const AdminDashboard: React.FC = () => {
                   'bg-gray-100 text-gray-800'}`}>
                 {activeCycle.status}
               </span>
+              {activeCycle.nominationEnd && (
+                <div className="text-xs text-gray-500 mt-2 flex items-center">
+                   <Clock className="w-3 h-3 mr-1" />
+                   {activeCycle.status === CycleStatus.NOMINATION 
+                     ? `Nomination ends ${new Date(activeCycle.nominationEnd).toLocaleDateString()} ${new Date(activeCycle.nominationEnd).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+                     : activeCycle.status === CycleStatus.VOTING
+                        ? `Voting ends ${new Date(activeCycle.votingEnd).toLocaleDateString()} ${new Date(activeCycle.votingEnd).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+                        : `Ended on ${new Date(activeCycle.votingEnd).toLocaleDateString()}`
+                   }
+                </div>
+              )}
             </div>
             
             <div className="flex gap-3">
@@ -304,7 +370,7 @@ export const AdminDashboard: React.FC = () => {
                   className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium transition-colors shadow-sm"
                 >
                   <Play className="w-4 h-4 mr-2" />
-                  Start Voting
+                  Force Start Voting
                 </button>
               )}
               {activeCycle.status === CycleStatus.VOTING && (
@@ -350,7 +416,7 @@ export const AdminDashboard: React.FC = () => {
       {/* Results Visualization */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 min-w-0">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-bold text-gray-900">Real-time Results</h2>
             <button 
@@ -364,7 +430,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
           
           {stats.length > 0 ? (
-            <div className="h-80 w-full">
+            <div style={{ width: '100%', height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -529,7 +595,7 @@ export const AdminDashboard: React.FC = () => {
       {/* New Cycle Modal */}
       {isCreateCycleModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <h3 className="text-lg font-bold text-gray-900">Start New Cycle</h3>
               <button 
@@ -542,7 +608,7 @@ export const AdminDashboard: React.FC = () => {
             
             <form onSubmit={handleCreateCycleSubmit} className="p-6 space-y-5">
               <p className="text-sm text-gray-600">
-                Starting a new cycle will close any currently active cycles and begin the nomination phase for the selected month.
+                Setup the month and duration for the new voting cycle.
               </p>
               
               {createCycleError && (
@@ -553,7 +619,7 @@ export const AdminDashboard: React.FC = () => {
               )}
               
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+                <div className="col-span-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Month</label>
                   <div className="relative">
                     <select
@@ -563,7 +629,9 @@ export const AdminDashboard: React.FC = () => {
                       className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 appearance-none transition-all cursor-pointer"
                     >
                       {MONTHS.map((m, idx) => (
-                        <option key={idx} value={idx}>{m}</option>
+                         <option key={idx} value={idx}>
+                           {m}
+                         </option>
                       ))}
                     </select>
                     <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-500">
@@ -572,7 +640,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="col-span-2">
+                <div className="col-span-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Year</label>
                   <input
                     type="number"
@@ -583,6 +651,55 @@ export const AdminDashboard: React.FC = () => {
                     onChange={e => setCreateCycleForm({ ...createCycleForm, year: parseInt(e.target.value) })}
                     className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 transition-all"
                   />
+                </div>
+
+                <div className="col-span-2 border-t border-gray-100 pt-4 mt-2">
+                    <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
+                        <Calendar className="w-4 h-4 mr-2 text-indigo-500" />
+                        Phase Schedule
+                    </h4>
+                </div>
+
+                <div className="col-span-1">
+                   <label className="block text-xs font-semibold text-gray-600 mb-1">Nomination Start</label>
+                   <input 
+                     type="datetime-local" 
+                     required
+                     value={createCycleForm.nominationStart}
+                     onChange={e => setCreateCycleForm({...createCycleForm, nominationStart: e.target.value})}
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                   />
+                </div>
+                <div className="col-span-1">
+                   <label className="block text-xs font-semibold text-gray-600 mb-1">Nomination End</label>
+                   <input 
+                     type="datetime-local" 
+                     required
+                     value={createCycleForm.nominationEnd}
+                     onChange={e => setCreateCycleForm({...createCycleForm, nominationEnd: e.target.value})}
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                   />
+                </div>
+
+                <div className="col-span-1">
+                   <label className="block text-xs font-semibold text-gray-600 mb-1">Voting Start</label>
+                   <input 
+                     type="datetime-local" 
+                     required
+                     value={createCycleForm.votingStart}
+                     onChange={e => setCreateCycleForm({...createCycleForm, votingStart: e.target.value})}
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                   />
+                </div>
+                <div className="col-span-1">
+                   <label className="block text-xs font-semibold text-gray-600 mb-1">Voting End</label>
+                   <input 
+                     type="datetime-local" 
+                     required
+                     value={createCycleForm.votingEnd}
+                     onChange={e => setCreateCycleForm({...createCycleForm, votingEnd: e.target.value})}
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                   />
                 </div>
               </div>
 

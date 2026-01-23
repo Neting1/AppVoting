@@ -22,7 +22,14 @@ export const Vote: React.FC = () => {
         const cycle = await dbService.getActiveCycle();
         setActiveCycle(cycle);
 
-        if (cycle && cycle.status === CycleStatus.VOTING) {
+        // Logic check: Must be in VOTING status AND within valid voting dates
+        const now = Date.now();
+        const isOpen = cycle && 
+                       cycle.status === CycleStatus.VOTING && 
+                       (!cycle.votingStart || now >= cycle.votingStart) &&
+                       (!cycle.votingEnd || now < cycle.votingEnd);
+
+        if (isOpen && cycle) {
           // Get all nominations for this cycle
           const nominations = await dbService.getNominations(cycle.id);
           
@@ -70,6 +77,12 @@ export const Vote: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user || !selectedCandidate) return;
 
+    // Safety check for date time before submitting
+    if (activeCycle.votingEnd && Date.now() > activeCycle.votingEnd) {
+        setError("The voting period has ended.");
+        return;
+    }
+
     try {
       await dbService.addVote(user.id, selectedCandidate, activeCycle.id);
       setSuccess(true);
@@ -83,7 +96,13 @@ export const Vote: React.FC = () => {
      return <div className="p-8 text-center text-gray-500">Loading candidates...</div>;
   }
 
-  if (!activeCycle || activeCycle.status !== CycleStatus.VOTING) {
+  const now = Date.now();
+  const isClosed = !activeCycle || 
+                   activeCycle.status !== CycleStatus.VOTING || 
+                   (activeCycle.votingStart && now < activeCycle.votingStart) ||
+                   (activeCycle.votingEnd && now > activeCycle.votingEnd);
+
+  if (isClosed) {
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-bold text-gray-900">Voting Closed</h2>

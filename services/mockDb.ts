@@ -105,18 +105,25 @@ export const mockDb = {
     return cycles.find(c => c.status !== CycleStatus.CLOSED) || cycles[cycles.length - 1];
   },
 
-  createCycle: (month: number, year: number): Cycle => {
+  createCycle: (month: number, year: number, dates?: {nomStart: number, nomEnd: number, voteStart: number, voteEnd: number}): Cycle => {
     const cycles = getStorage<Cycle[]>(KEYS.CYCLES, INITIAL_CYCLES);
     // Deactivate previous active cycles
     const updatedCycles = cycles.map(c => 
       c.status !== CycleStatus.CLOSED ? { ...c, status: CycleStatus.CLOSED } : c
     );
     
+    const now = Date.now();
+    const week = 7 * 24 * 60 * 60 * 1000;
+
     const newCycle: Cycle = {
       id: `c${Date.now()}`,
       month,
       year,
-      status: CycleStatus.NOMINATION
+      status: CycleStatus.NOMINATION,
+      nominationStart: dates?.nomStart ?? now,
+      nominationEnd: dates?.nomEnd ?? (now + week),
+      votingStart: dates?.voteStart ?? (now + week),
+      votingEnd: dates?.voteEnd ?? (now + 2 * week)
     };
     
     updatedCycles.push(newCycle);
