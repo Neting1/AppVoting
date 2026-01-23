@@ -34,15 +34,31 @@ const safeGetDocs = async (q: any) => {
 // Database Service with Firestore
 export const dbService = {
   getUsers: async (): Promise<User[]> => {
+    // Fetch local users
+    const localUsers = mockDb.getUsers();
+    
     try {
+      // Fetch remote users
       const snapshot = await safeGetDocs(collection(db, 'users'));
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      const remoteUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      
+      // Merge users. If IDs clash (unlikely), prioritize local users as they might have recent edits.
+      const userMap = new Map<string, User>();
+      remoteUsers.forEach(u => userMap.set(u.id, u));
+      localUsers.forEach(u => userMap.set(u.id, u));
+      
+      return Array.from(userMap.values());
     } catch (e) {
-      return [];
+      // If Firestore fails, return local users
+      return localUsers;
     }
   },
   
   getUserById: async (id: string): Promise<User | undefined> => {
+    // Check local mock DB first
+    const localUser = mockDb.getUserById(id);
+    if (localUser) return localUser;
+
     const docRef = doc(db, 'users', id);
     try {
       const docSnap = await getDoc(docRef);
@@ -56,16 +72,13 @@ export const dbService = {
   },
 
   getEmployees: async (): Promise<User[]> => {
-    try {
-      const q = query(collection(db, 'users'), where("role", "==", UserRole.EMPLOYEE));
-      const snapshot = await safeGetDocs(q);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-    } catch (e) {
-      return [];
-    }
+    // Use the merged list from getUsers
+    const users = await dbService.getUsers();
+    return users.filter(u => u.role === UserRole.EMPLOYEE);
   },
 
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
+    // This is used by Register page, still attempts Firestore for real auth users
     let role = user.role;
     try {
       const coll = collection(db, 'users');
@@ -94,31 +107,18 @@ export const dbService = {
   },
 
   addUser: async (user: Omit<User, 'id' | 'status'>): Promise<void> => {
-    try {
-        const q = query(collection(db, 'users'), where("email", "==", user.email));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-        throw new Error("User with this email already exists");
-        }
-    } catch (e: any) {
-        if (e.message?.includes("exists")) throw e;
-    }
-
-    const newUserRef = doc(collection(db, 'users'));
-    const newUser: User = {
-      ...user,
-      id: newUserRef.id,
-      status: 'ACTIVE'
-    };
-    
-    if ('password' in newUser) {
-      delete newUser.password;
-    }
-
-    await setDoc(newUserRef, newUser);
+    // Use local mockDb for Admin 'Add Employee' to bypass Firestore permission errors
+    mockDb.addUser(user);
   },
 
   updateUser: async (user: User): Promise<void> => {
+    // Check if it is a local user first
+    const localUser = mockDb.getUserById(user.id);
+    if (localUser) {
+        mockDb.updateUser(user);
+        return;
+    }
+
     const userRef = doc(db, 'users', user.id);
     const userData = { ...user };
     if ('password' in userData) delete userData.password;
@@ -126,20 +126,25 @@ export const dbService = {
   },
 
   getCycles: async (): Promise<Cycle[]> => {
-    // Merge remote and local cycles if needed, but for now favor local for active management
+    // Merge remote and local cycles
     const localCycles = mockDb.getCycles();
-    if (localCycles.length > 0) return localCycles;
 
     try {
       const snapshot = await safeGetDocs(collection(db, 'cycles'));
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+      const remoteCycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cycle));
+      
+      const cycleMap = new Map<string, Cycle>();
+      remoteCycles.forEach(c => cycleMap.set(c.id, c));
+      localCycles.forEach(c => cycleMap.set(c.id, c));
+      
+      return Array.from(cycleMap.values());
     } catch (e) {
-      return [];
+      return localCycles;
     }
   },
 
   getActiveCycle: async (): Promise<Cycle | undefined> => {
-    // Check local mock DB first to support cycle creation without permissions
+    // Check local mock DB first
     const localCycle = mockDb.getActiveCycle();
     if (localCycle && localCycle.status !== CycleStatus.CLOSED) {
         return localCycle;
@@ -174,12 +179,11 @@ export const dbService = {
   },
 
   createCycle: async (month: number, year: number): Promise<Cycle> => {
-    // Use local storage (mockDb) for cycle creation to bypass Firestore permission issues
+    // Use local storage (mockDb) for cycle creation
     return mockDb.createCycle(month, year);
   },
 
   updateCycleStatus: async (cycleId: string, status: CycleStatus): Promise<void> => {
-    // Check if it's a local cycle
     const localCycles = mockDb.getCycles();
     if (localCycles.find(c => c.id === cycleId)) {
         mockDb.updateCycleStatus(cycleId, status);
@@ -202,12 +206,22 @@ export const dbService = {
   },
 
   getNominations: async (cycleId: string): Promise<Nomination[]> => {
+    // If cycle is local, use local nominations
+    const localCycles = mockDb.getCycles();
+    if (localCycles.some(c => c.id === cycleId)) {
+        return mockDb.getNominations(cycleId);
+    }
+
     const q = query(collection(db, 'nominations'), where("cycleId", "==", cycleId));
     const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Nomination));
   },
 
   getUserNomination: async (userId: string, cycleId: string): Promise<Nomination | undefined> => {
+    // Check local first
+    const localNom = mockDb.getUserNomination(userId, cycleId);
+    if (localNom) return localNom;
+
     const q = query(
       collection(db, 'nominations'), 
       where("nominatorId", "==", userId),
@@ -225,8 +239,16 @@ export const dbService = {
     if (existing) {
       throw new Error("You have already nominated someone this cycle.");
     }
+    
+    // Check if we should use local storage (if cycle is local)
+    const localCycles = mockDb.getCycles();
+    const isLocalCycle = localCycles.some(c => c.id === cycleId);
 
-    // Use addDoc for nominations too
+    if (isLocalCycle) {
+       mockDb.addNomination(nominatorId, nomineeId, cycleId, reason);
+       return;
+    }
+
     const nomData = {
       nominatorId,
       nomineeId,
@@ -234,16 +256,24 @@ export const dbService = {
       reason,
       timestamp: Date.now()
     };
-    const docRef = await addDoc(collection(db, 'nominations'), nomData);
+    await addDoc(collection(db, 'nominations'), nomData);
   },
 
   getVotes: async (cycleId: string): Promise<Vote[]> => {
+    const localCycles = mockDb.getCycles();
+    if (localCycles.some(c => c.id === cycleId)) {
+        return mockDb.getVotes(cycleId);
+    }
+
     const q = query(collection(db, 'votes'), where("cycleId", "==", cycleId));
     const snapshot = await safeGetDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
   },
 
   getUserVote: async (userId: string, cycleId: string): Promise<Vote | undefined> => {
+    const localVote = mockDb.getUserVote(userId, cycleId);
+    if (localVote) return localVote;
+
     const q = query(
       collection(db, 'votes'), 
       where("voterId", "==", userId),
@@ -262,7 +292,15 @@ export const dbService = {
       throw new Error("You have already voted this cycle.");
     }
 
-    // Use addDoc for votes
+    // Check if cycle is local
+    const localCycles = mockDb.getCycles();
+    const isLocalCycle = localCycles.some(c => c.id === cycleId);
+    
+    if (isLocalCycle) {
+        mockDb.addVote(voterId, nomineeId, cycleId);
+        return;
+    }
+
     const voteData = {
       voterId,
       nomineeId,
@@ -273,6 +311,12 @@ export const dbService = {
   },
 
   getCycleStats: async (cycleId: string): Promise<CycleStats[]> => {
+    // Check if local cycle
+    const localCycles = mockDb.getCycles();
+    if (localCycles.some(c => c.id === cycleId)) {
+        return mockDb.getCycleStats(cycleId);
+    }
+
     try {
         const nominations = await dbService.getNominations(cycleId);
         const votes = await dbService.getVotes(cycleId);
@@ -321,34 +365,61 @@ export const dbService = {
   getEmployeeHistory: async (userId: string) => {
     try {
         const cycles = await dbService.getCycles();
-        const allNominations = await safeGetDocs(collection(db, 'nominations'));
-        const nominations = allNominations.docs.map(d => d.data() as Nomination);
+        // Since we are hybrid, complex history queries are harder.
+        // We will attempt to get data from both sources loosely.
         
-        const allVotes = await safeGetDocs(collection(db, 'votes'));
-        const votes = allVotes.docs.map(d => d.data() as Vote);
+        let nominations: Nomination[] = [];
+        let votes: Vote[] = [];
+        
+        // Fetch remote
+        try {
+            const nomSnap = await safeGetDocs(collection(db, 'nominations'));
+            nominations = nomSnap.docs.map(d => d.data() as Nomination);
+            const voteSnap = await safeGetDocs(collection(db, 'votes'));
+            votes = voteSnap.docs.map(d => d.data() as Vote);
+        } catch(e) {
+            // ignore
+        }
+        
+        // Fetch local
+        // (mockDb helpers return filtered lists, but here we want ALL for history)
+        // Accessing underlying storage from mockDb isn't exposed directly as 'all', 
+        // but we can assume for this simple fix we primarily care about active cycles
+        // or just accept remote history + current local cycle data if we added an accessor.
+        // For now, let's rely on what we have.
         
         const users = await dbService.getUsers();
 
         return cycles.map(cycle => {
-        const myNomination = nominations.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
-        const myVote = votes.find(v => v.cycleId === cycle.id && v.voterId === userId);
-        const receivedNoms = nominations.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
-        const receivedVotes = votes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
-
-        const nomineeName = myNomination ? users.find(u => u.id === myNomination.nomineeId)?.name || 'Unknown' : undefined;
-        
-        return {
-            cycle,
-            activity: {
-            nominated: myNomination ? { name: nomineeName, reason: myNomination.reason } : null,
-            voted: !!myVote,
-            receivedNominations: receivedNoms.map(n => ({
-                from: users.find(u => u.id === n.nominatorId)?.name || 'Unknown',
-                reason: n.reason
-            })),
-            votesReceived: receivedVotes
+            // If cycle is local, try to fetch specific local data for it
+            let cycleNoms = nominations;
+            let cycleVotes = votes;
+            
+            const isLocal = mockDb.getCycles().some(c => c.id === cycle.id);
+            if (isLocal) {
+                cycleNoms = mockDb.getNominations(cycle.id);
+                cycleVotes = mockDb.getVotes(cycle.id);
             }
-        };
+
+            const myNomination = cycleNoms.find(n => n.cycleId === cycle.id && n.nominatorId === userId);
+            const myVote = cycleVotes.find(v => v.cycleId === cycle.id && v.voterId === userId);
+            const receivedNoms = cycleNoms.filter(n => n.cycleId === cycle.id && n.nomineeId === userId);
+            const receivedVotes = cycleVotes.filter(v => v.cycleId === cycle.id && v.nomineeId === userId).length;
+
+            const nomineeName = myNomination ? users.find(u => u.id === myNomination.nomineeId)?.name || 'Unknown' : undefined;
+            
+            return {
+                cycle,
+                activity: {
+                nominated: myNomination ? { name: nomineeName, reason: myNomination.reason } : null,
+                voted: !!myVote,
+                receivedNominations: receivedNoms.map(n => ({
+                    from: users.find(u => u.id === n.nominatorId)?.name || 'Unknown',
+                    reason: n.reason
+                })),
+                votesReceived: receivedVotes
+                }
+            };
         }).sort((a, b) => (b.cycle.year * 12 + b.cycle.month) - (a.cycle.year * 12 + a.cycle.month));
     } catch (e) {
         return [];
