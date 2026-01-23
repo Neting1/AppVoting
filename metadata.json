@@ -1,0 +1,5 @@
+{
+  "name": "Employee of the Month Platform",
+  "description": "A comprehensive nomination and voting platform for organizations to recognize outstanding employees. Features include role-based access for employees and admins, voting cycle management, real-time results visualization, and secure local data handling.",
+  "requestFramePermissions": []
+}
