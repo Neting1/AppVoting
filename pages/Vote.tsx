@@ -40,17 +40,16 @@ export const Vote: React.FC = () => {
             candidateMap.set(n.nomineeId, count + 1);
           });
 
-          // Filter out current user from candidates (prevent self-voting)
+          // Process candidates
           const validCandidates: { user: User, nominations: number }[] = [];
           const employees = await dbService.getEmployees();
 
           candidateMap.forEach((count, id) => {
-            if (id !== user?.id) {
-               const emp = employees.find(e => e.id === id);
-               if (emp) {
-                 validCandidates.push({ user: emp, nominations: count });
-               }
-            }
+             // We allow self-voting if nominated, so we don't filter out user.id here anymore
+             const emp = employees.find(e => e.id === id);
+             if (emp) {
+               validCandidates.push({ user: emp, nominations: count });
+             }
           });
 
           // Sort by nomination count (optional, but looks nice)
@@ -173,7 +172,10 @@ export const Vote: React.FC = () => {
               />
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-gray-900">{candidate.name}</h3>
+                  <h3 className="font-bold text-gray-900">
+                    {candidate.name}
+                    {candidate.id === user?.id && <span className="text-xs text-purple-600 ml-2">(You)</span>}
+                  </h3>
                   <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded-full text-gray-600">
                     {candidate.department}
                   </span>

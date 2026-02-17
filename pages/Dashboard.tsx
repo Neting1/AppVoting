@@ -208,7 +208,7 @@ export const Dashboard: React.FC = () => {
             <li>Nominations are anonymous.</li>
             <li>You can only nominate one person per cycle.</li>
             <li>Voting opens after the nomination phase ends.</li>
-            <li>You cannot nominate or vote for yourself (System integrity).</li>
+            <li>You cannot nominate yourself, but you can vote for yourself if nominated.</li>
           </ul>
         </div>
       </div>
