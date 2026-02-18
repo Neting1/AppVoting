@@ -108,25 +108,41 @@ export const AdminDashboard: React.FC = () => {
     refreshData();
   }, []);
 
+  const triggerCelebration = () => {
+    const duration = 5 * 1000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 50 };
+    const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+    const interval: any = setInterval(function() {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        return clearInterval(interval);
+      }
+
+      const particleCount = 50 * (timeLeft / duration);
+      
+      confetti({ 
+        ...defaults, 
+        particleCount, 
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+        colors: ['#6366f1', '#a855f7', '#fbbf24', '#10b981'] // Indigo, Purple, Amber, Emerald
+      });
+      confetti({ 
+        ...defaults, 
+        particleCount, 
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+        colors: ['#6366f1', '#a855f7', '#fbbf24', '#10b981']
+      });
+    }, 250);
+  };
+
   useEffect(() => {
     if (winner && activeCycle?.status === CycleStatus.CLOSED) {
-      const timer = setTimeout(() => {
-        const duration = 3 * 1000;
-        const animationEnd = Date.now() + duration;
-        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
-        const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
-
-        const interval: any = setInterval(function() {
-          const timeLeft = animationEnd - Date.now();
-          if (timeLeft <= 0) return clearInterval(interval);
-          const particleCount = 50 * (timeLeft / duration);
-          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
-        }, 250);
-      }, 500);
-      return () => clearTimeout(timer);
+      triggerCelebration();
     }
-  }, [winner, activeCycle]);
+  }, [winner?.id, activeCycle?.status]);
 
   const uniqueDepartments = Array.from(new Set(users.map(u => u.department))).filter(Boolean).sort();
 
@@ -247,7 +263,8 @@ export const AdminDashboard: React.FC = () => {
     if (leader.voteCount > 0) {
       await dbService.setCycleWinner(activeCycle.id, leader.nomineeId);
       await dbService.updateCycleStatus(activeCycle.id, CycleStatus.CLOSED);
-      refreshData();
+      await refreshData();
+      triggerCelebration();
     }
   };
 
@@ -992,352 +1009,6 @@ export const AdminDashboard: React.FC = () => {
             </div>
             
             <form onSubmit={handleCreateCycleSubmit} className="p-6 space-y-5">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Setup the month and duration for the new voting cycle.
-              </p>
-              
-              {createCycleError && (
-                <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/30 p-3 rounded-lg border border-red-100 dark:border-red-900/50 flex items-center">
-                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span>
-                  {createCycleError}
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Month</label>
-                  <div className="relative">
-                    <select
-                      required
-                      value={createCycleForm.month}
-                      onChange={e => setCreateCycleForm({ ...createCycleForm, month: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white appearance-none transition-all cursor-pointer"
-                    >
-                      {MONTHS.map((m, idx) => (
-                         <option key={idx} value={idx}>
-                           {m}
-                         </option>
-                      ))}
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-500">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Year</label>
-                  <input
-                    type="number"
-                    required
-                    min={2023}
-                    max={new Date().getFullYear()}
-                    value={createCycleForm.year}
-                    onChange={e => setCreateCycleForm({ ...createCycleForm, year: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all"
-                  />
-                </div>
-
-                <div className="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-4 mt-2">
-                    <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center">
-                        <Calendar className="w-4 h-4 mr-2 text-indigo-500" />
-                        Phase Schedule
-                    </h4>
-                </div>
-
-                <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Nomination Start</label>
-                   <input 
-                     type="datetime-local" 
-                     required
-                     value={createCycleForm.nominationStart}
-                     onChange={e => setCreateCycleForm({...createCycleForm, nominationStart: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                   />
-                </div>
-                <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Nomination End</label>
-                   <input 
-                     type="datetime-local" 
-                     required
-                     value={createCycleForm.nominationEnd}
-                     onChange={e => setCreateCycleForm({...createCycleForm, nominationEnd: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                   />
-                </div>
-
-                <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Voting Start</label>
-                   <input 
-                     type="datetime-local" 
-                     required
-                     value={createCycleForm.votingStart}
-                     onChange={e => setCreateCycleForm({...createCycleForm, votingStart: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                   />
-                </div>
-                <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Voting End</label>
-                   <input 
-                     type="datetime-local" 
-                     required
-                     value={createCycleForm.votingEnd}
-                     onChange={e => setCreateCycleForm({...createCycleForm, votingEnd: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                   />
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCycleModalOpen(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors shadow-sm"
-                >
-                  Start Cycle
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Employee Profile Modal */}
-      {viewingUser && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-3xl w-full my-8 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between bg-gray-50/50 dark:bg-gray-700/50 rounded-t-2xl">
-              <div className="flex items-center gap-5">
-                {viewingUser.avatar ? (
-                  <img src={viewingUser.avatar} alt="" className="w-20 h-20 rounded-full border-4 border-white dark:border-gray-600 shadow-sm object-cover" />
-                ) : (
-                  <div className="w-20 h-20 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-300 text-3xl font-bold border-4 border-white dark:border-gray-600 shadow-sm">
-                    {viewingUser.name.charAt(0)}
-                  </div>
-                )}
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{viewingUser.name}</h3>
-                  <div className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-700 dark:text-gray-300 font-medium">{viewingUser.department}</span>
-                    <span>•</span>
-                    <span>{viewingUser.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                      viewingUser.status === 'ACTIVE' 
-                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800' 
-                        : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
-                    }`}>
-                      {viewingUser.status}
-                    </span>
-                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                      viewingUser.role === UserRole.ADMIN 
-                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' 
-                        : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-                    }`}>
-                      {viewingUser.role}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button 
-                onClick={() => setViewingUser(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="overflow-y-auto flex-1 p-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 flex items-center gap-4">
-                  <div className="p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm text-indigo-600 dark:text-indigo-400">
-                    <Award className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-300">Total Nominations</p>
-                    <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
-                      {userHistory.reduce((acc, h) => acc + h.activity.receivedNominations.length, 0)}
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800 flex items-center gap-4">
-                  <div className="p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm text-purple-600 dark:text-purple-400">
-                    <Vote className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-purple-900 dark:text-purple-300">Total Votes Received</p>
-                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-400">
-                       {userHistory.reduce((acc, h) => acc + h.activity.votesReceived, 0)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* History Timeline */}
-              <h4 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                <Calendar className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
-                History & Activity
-              </h4>
-              <div className="space-y-6">
-                {userHistory.map((item, idx) => (
-                  <div key={idx} className="relative pl-8 pb-2 border-l-2 border-gray-100 dark:border-gray-700 last:border-0">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-white dark:border-gray-800 shadow-sm"></div>
-                    
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        {MONTHS[item.cycle.month]} {item.cycle.year}
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
-                        {item.cycle.status}
-                      </span>
-                    </div>
-
-                    {/* Received Nominations */}
-                    {item.activity.receivedNominations.length > 0 && (
-                      <div className="space-y-3 mb-4">
-                        {item.activity.receivedNominations.map((nom: any, nIdx: number) => (
-                          <div key={nIdx} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                            <div className="flex items-start gap-3">
-                              <MessageSquare className="w-4 h-4 text-indigo-400 mt-1 shrink-0" />
-                              <div>
-                                <p className="text-sm text-gray-800 dark:text-gray-200 italic">"{nom.reason}"</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">— Nominated by {nom.from}</p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* User Activity */}
-                    <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-2">
-                       <div className="flex items-center gap-2">
-                         <span className={`w-2 h-2 rounded-full ${item.activity.nominated ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
-                         {item.activity.nominated ? `Nominated ${item.activity.nominated.name}` : 'Did not nominate'}
-                       </div>
-                       <div className="flex items-center gap-2">
-                         <span className={`w-2 h-2 rounded-full ${item.activity.voted ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
-                         {item.activity.voted ? 'Voted' : 'Did not vote'}
-                       </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {userHistory.length === 0 && (
-                   <div className="text-center py-8 text-gray-400 dark:text-gray-500">No history found for this employee.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-b-2xl flex justify-end">
-              <button
-                onClick={() => setViewingUser(null)}
-                className="px-5 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm"
-              >
-                Close Profile
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit User Modal */}
-      {isEditModalOpen && editingUser && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Employee</h3>
-              <button 
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleUserUpdate} className="p-6 space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editingUser.name}
-                  onChange={e => setEditingUser({ ...editingUser,name: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Department</label>
-                <input
-                  type="text"
-                  required
-                  value={editingUser.department}
-                  onChange={e => setEditingUser({ ...editingUser, department: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
-                <input
-                  type="email"
-                  required
-                  disabled
-                  value={editingUser.email}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed shadow-sm"
-                />
-                <p className="text-xs text-gray-400 mt-1.5 flex items-center">
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></span>
-                  Email cannot be changed
-                </p>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors shadow-sm"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add User Modal */}
-      {isAddUserModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add New Employee</h3>
-              <button 
-                onClick={() => setIsAddUserModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleAddUserSubmit} className="p-6 space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
                 <input

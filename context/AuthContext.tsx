@@ -28,35 +28,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+    let unsubscribeProfile: (() => void) | undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+      // Clean up previous profile listener if it exists
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = undefined;
+      }
+
       if (firebaseUser) {
-        try {
-          // Fetch the user profile from Firestore
-          const userProfile = await dbService.getUserById(firebaseUser.uid);
-          
+        // Subscribe to real-time profile updates
+        unsubscribeProfile = dbService.subscribeToUser(firebaseUser.uid, async (userProfile) => {
           if (userProfile) {
-            setState({ 
-              user: userProfile, 
-              isAuthenticated: true 
-            });
+            if (userProfile.status === 'INACTIVE') {
+              console.log("User account is inactive. Logging out.");
+              await signOut(auth);
+              setState({ user: null, isAuthenticated: false });
+            } else {
+              setState({ user: userProfile, isAuthenticated: true });
+            }
           } else {
-             // Handle case where auth exists but db profile doesn't.
-             // We do NOT sign out here automatically, because the 'register' function 
-             // needs the auth session to exist to repair the profile.
-             console.warn("Auth user found but no Firestore profile");
-             setState({ user: null, isAuthenticated: false });
+            console.warn("Auth user found but no Firestore profile. Logging out.");
+            await signOut(auth);
+            setState({ user: null, isAuthenticated: false });
           }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setState({ user: null, isAuthenticated: false });
-        }
+          setLoading(false);
+        });
       } else {
         setState({ user: null, isAuthenticated: false });
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
   const login = async (email: string, password?: string): Promise<boolean> => {

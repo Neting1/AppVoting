@@ -12,7 +12,8 @@ import {
   getCountFromServer,
   orderBy,
   limit,
-  deleteDoc
+  deleteDoc,
+  onSnapshot
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
@@ -106,6 +107,23 @@ export const dbService = {
       console.error("Error getting user profile:", error);
     }
     return undefined;
+  },
+
+  subscribeToUser: (userId: string, callback: (user: User | null) => void): () => void => {
+    const docRef = doc(db, 'users', userId);
+    return onSnapshot(docRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          callback({ id: docSnap.id, ...docSnap.data() } as User);
+        } else {
+          callback(null);
+        }
+      },
+      (error) => {
+        console.error("Error subscribing to user:", error);
+        callback(null);
+      }
+    );
   },
 
   getUserByEmail: async (email: string): Promise<User | undefined> => {
