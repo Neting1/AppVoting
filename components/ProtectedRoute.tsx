@@ -19,24 +19,24 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden text-center p-8 border border-gray-100">
-          <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6 animate-in zoom-in duration-300">
-            <ShieldAlert className="w-10 h-10 text-red-600" />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4 transition-colors">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden text-center p-8 border border-gray-100 dark:border-gray-700">
+          <div className="w-20 h-20 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-in zoom-in duration-300">
+            <ShieldAlert className="w-10 h-10 text-red-600 dark:text-red-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">Access Denied</h2>
-          <p className="text-gray-600 mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Access Denied</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-8">
             You do not have permission to access this area. This section is restricted to administrators only.
           </p>
           <Link 
             to="/"
-            className="inline-flex items-center justify-center w-full px-6 py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-all active:scale-[0.98] shadow-sm"
+            className="inline-flex items-center justify-center w-full px-6 py-3 bg-gray-900 dark:bg-gray-700 text-white font-medium rounded-xl hover:bg-gray-800 dark:hover:bg-gray-600 transition-all active:scale-[0.98] shadow-sm"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Return to Dashboard
           </Link>
         </div>
-        <p className="text-sm text-gray-400 mt-8">Twinhill Enterprise Security</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500 mt-8">Twinhill Enterprise Security</p>
       </div>
     );
   }

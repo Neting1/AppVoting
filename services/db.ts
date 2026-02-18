@@ -11,7 +11,8 @@ import {
   writeBatch,
   getCountFromServer,
   orderBy,
-  limit
+  limit,
+  deleteDoc
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
@@ -107,16 +108,44 @@ export const dbService = {
     return undefined;
   },
 
+  getUserByEmail: async (email: string): Promise<User | undefined> => {
+    const q = query(collection(db, 'users'), where("email", "==", email));
+    const snapshot = await safeGetDocs(q);
+    if (!snapshot.empty) {
+      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
+    }
+    return undefined;
+  },
+
   getEmployees: async (): Promise<User[]> => {
     const users = await dbService.getUsers();
     return users.filter(u => u.role === UserRole.EMPLOYEE);
   },
 
   createUserProfile: async (uid: string, user: Omit<User, 'id' | 'status'>): Promise<void> => {
+    // Clean up any seeded users with this email to avoid duplicates
+    // This reconciles the "Ghost" seeded user with the real authenticated user
+    try {
+        const q = query(collection(db, 'users'), where("email", "==", user.email));
+        const snapshot = await safeGetDocs(q);
+        if (!snapshot.empty) {
+            const batch = writeBatch(db);
+            snapshot.docs.forEach(d => {
+                if (d.id !== uid) {
+                    batch.delete(d.ref);
+                }
+            });
+            await batch.commit();
+        }
+    } catch (e) {
+        console.warn("Error cleaning up seeded users", e);
+    }
+
     let role = user.role;
     try {
       const coll = collection(db, 'users');
       const snapshot = await getCountFromServer(coll);
+      // If this is the only user (after cleanup), make them admin
       if (snapshot.data().count === 0) role = UserRole.ADMIN;
     } catch (error) {
       console.warn("Could not check user count for role assignment", error);

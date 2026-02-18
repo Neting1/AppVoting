@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { dbService } from '../services/db';
 import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
+import { useTheme } from '../context/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock, FileBadge } from 'lucide-react';
+import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock, FileBadge, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react';
 // @ts-ignore
 import confetti from 'canvas-confetti';
 // @ts-ignore
@@ -14,7 +15,9 @@ const MONTHS = [
 ];
 
 export const AdminDashboard: React.FC = () => {
+  const { theme } = useTheme();
   const [activeCycle, setActiveCycle] = useState<Cycle | undefined>();
+  const [allCycles, setAllCycles] = useState<Cycle[]>([]);
   const [stats, setStats] = useState<CycleStats[]>([]);
   const [winner, setWinner] = useState<User | null>(null);
   
@@ -35,6 +38,13 @@ export const AdminDashboard: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
+  // Directory Filters & Sort
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterRole, setFilterRole] = useState<string>('ALL');
+  const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [filterDepartment, setFilterDepartment] = useState<string>('ALL');
+  const [sortConfig, setSortConfig] = useState<{ key: keyof User | 'name', direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
+
   // Profile View State
   const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [userHistory, setUserHistory] = useState<any[]>([]);
@@ -51,12 +61,19 @@ export const AdminDashboard: React.FC = () => {
   const [addUserError, setAddUserError] = useState('');
 
   // Certificate State
-  const [isCertificateOpen, setIsCertificateOpen] = useState(false);
+  const [certificateData, setCertificateData] = useState<{user: User, cycle: Cycle} | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const certificateRef = useRef<HTMLDivElement>(null);
 
   const refreshData = async () => {
     try {
+      try {
+        const fetchedCycles = await dbService.getCycles();
+        setAllCycles(fetchedCycles);
+      } catch (e) {
+        console.warn("Failed to fetch all cycles", e);
+      }
+
       const cycle = await dbService.getActiveCycle();
       setActiveCycle(cycle);
       if (cycle) {
@@ -91,24 +108,17 @@ export const AdminDashboard: React.FC = () => {
     refreshData();
   }, []);
 
-  // Celebration Effect
   useEffect(() => {
     if (winner && activeCycle?.status === CycleStatus.CLOSED) {
-      // Small delay to ensure render
       const timer = setTimeout(() => {
         const duration = 3 * 1000;
         const animationEnd = Date.now() + duration;
         const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
-
         const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
 
         const interval: any = setInterval(function() {
           const timeLeft = animationEnd - Date.now();
-
-          if (timeLeft <= 0) {
-            return clearInterval(interval);
-          }
-
+          if (timeLeft <= 0) return clearInterval(interval);
           const particleCount = 50 * (timeLeft / duration);
           confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
           confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
@@ -118,19 +128,55 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [winner, activeCycle]);
 
+  const uniqueDepartments = Array.from(new Set(users.map(u => u.department))).filter(Boolean).sort();
+
+  const getFilteredAndSortedUsers = () => {
+    let result = [...users];
+    if (filterRole !== 'ALL') result = result.filter(u => u.role === filterRole);
+    if (filterStatus !== 'ALL') result = result.filter(u => u.status === filterStatus);
+    if (filterDepartment !== 'ALL') result = result.filter(u => u.department === filterDepartment);
+    if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        result = result.filter(u => 
+            u.name.toLowerCase().includes(query) || 
+            u.email.toLowerCase().includes(query)
+        );
+    }
+    result.sort((a, b) => {
+        const aValue = (a[sortConfig.key as keyof User] || '').toString().toLowerCase();
+        const bValue = (b[sortConfig.key as keyof User] || '').toString().toLowerCase();
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    return result;
+  };
+
+  const processedUsers = getFilteredAndSortedUsers();
+
+  const handleSort = (key: keyof User) => {
+    setSortConfig(current => ({
+        key,
+        direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const SortIcon = ({ column }: { column: keyof User }) => {
+    if (sortConfig.key !== column) return <ChevronDown className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-30 transition-opacity" />;
+    return sortConfig.direction === 'asc' 
+        ? <ChevronUp className="w-4 h-4 ml-1 text-indigo-600 dark:text-indigo-400" />
+        : <ChevronDown className="w-4 h-4 ml-1 text-indigo-600 dark:text-indigo-400" />;
+  };
+
   const handleOpenCreateCycle = () => {
     const now = new Date();
-    // Default dates: Nom starts now, ends in 7 days. Vote starts 7 days, ends 14 days.
     const nomEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const voteStart = nomEnd;
     const voteEnd = new Date(nomEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
-    
-    // Format for datetime-local: YYYY-MM-DDTHH:mm
     const toLocalISO = (d: Date) => {
         const pad = (n: number) => n.toString().padStart(2, '0');
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     };
-
     setCreateCycleForm({ 
         month: now.getMonth(), 
         year: now.getFullYear(),
@@ -147,28 +193,31 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     setCreateCycleError('');
 
-    // Validate: Ensure no active cycle exists
     if (activeCycle && activeCycle.status !== CycleStatus.CLOSED) {
         setCreateCycleError("Cannot create a new cycle while the current cycle is still active. Please close it first.");
         return;
     }
 
-    // Validate Dates
     const nomStart = new Date(createCycleForm.nominationStart).getTime();
     const nomEnd = new Date(createCycleForm.nominationEnd).getTime();
     const voteStart = new Date(createCycleForm.votingStart).getTime();
     const voteEnd = new Date(createCycleForm.votingEnd).getTime();
+    const nowBuffer = Date.now() - 60000;
 
+    if (nomStart < nowBuffer) {
+        setCreateCycleError("Nomination start date cannot be in the past.");
+        return;
+    }
     if (nomEnd <= nomStart) {
-        setCreateCycleError("Nomination end date must be after start date.");
+        setCreateCycleError("Nomination end date must be strictly after start date.");
         return;
     }
     if (voteStart < nomEnd) {
-        setCreateCycleError("Voting must start after nomination ends.");
+        setCreateCycleError("Voting must start strictly after nomination ends.");
         return;
     }
     if (voteEnd <= voteStart) {
-        setCreateCycleError("Voting end date must be after voting start date.");
+        setCreateCycleError("Voting end date must be strictly after voting start date.");
         return;
     }
     
@@ -194,24 +243,18 @@ export const AdminDashboard: React.FC = () => {
 
   const handleDeclareWinner = async () => {
     if (!activeCycle || stats.length === 0) return;
-    
-    // Assumes stats are sorted by vote count desc
     const leader = stats[0];
     if (leader.voteCount > 0) {
       await dbService.setCycleWinner(activeCycle.id, leader.nomineeId);
       await dbService.updateCycleStatus(activeCycle.id, CycleStatus.CLOSED);
-      // Confetti will trigger via useEffect once state updates
       refreshData();
     }
   };
 
   const handleExport = async () => {
     if (!activeCycle) return;
-    
-    // Convert stats to CSV
     const headers = ['Nominee Name', 'Department', 'Nominations', 'Votes'];
     const users = await dbService.getUsers();
-    
     const rows = stats.map(s => {
       const u = users.find(user => user.id === s.nomineeId);
       return [
@@ -221,7 +264,6 @@ export const AdminDashboard: React.FC = () => {
         s.voteCount
       ].join(',');
     });
-
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -233,8 +275,8 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDownloadCertificate = async () => {
-    if (!certificateRef.current || !winner || !activeCycle) return;
-    
+    if (!certificateRef.current || !certificateData) return;
+    const { user, cycle } = certificateData;
     setIsDownloading(true);
     try {
         const canvas = await html2canvas(certificateRef.current, {
@@ -242,9 +284,8 @@ export const AdminDashboard: React.FC = () => {
             backgroundColor: '#ffffff',
             useCORS: true
         });
-        
         const link = document.createElement('a');
-        link.download = `Certificate_${winner.name.replace(/\s+/g, '_')}_${MONTHS[activeCycle.month]}_${activeCycle.year}.png`;
+        link.download = `Certificate_${user.name.replace(/\s+/g, '_')}_${MONTHS[cycle.month]}_${cycle.year}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
     } catch (err) {
@@ -255,7 +296,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // User Management Functions
   const handleEditClick = (user: User) => {
     setEditingUser({ ...user });
     setIsEditModalOpen(true);
@@ -292,7 +332,7 @@ export const AdminDashboard: React.FC = () => {
         email: newUser.email,
         department: newUser.department,
         role: newUser.role,
-        password: newUser.password || 'password123' // Fallback default
+        password: newUser.password || 'password123'
       });
       setIsAddUserModalOpen(false);
       setNewUser({
@@ -308,7 +348,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Helper to render winner card content
   const renderWinnerSection = () => {
     if (winner) {
       return (
@@ -337,7 +376,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           <button 
-             onClick={() => setIsCertificateOpen(true)}
+             onClick={() => activeCycle && setCertificateData({ user: winner, cycle: activeCycle })}
              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/40 rounded-xl font-semibold shadow-lg backdrop-blur-md transition-all active:scale-95 flex items-center"
           >
              <FileBadge className="w-5 h-5 mr-2" />
@@ -379,13 +418,20 @@ export const AdminDashboard: React.FC = () => {
     );
   };
 
+  const pastWinners = allCycles
+    .filter(c => c.status === CycleStatus.CLOSED && c.winnerId)
+    .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+    });
+
   return (
     <div className="space-y-8 pb-10">
       {/* Header & Controls */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Admin Dashboard</h1>
-          <p className="text-gray-500 mt-1">Manage voting cycles, view results, and manage employees.</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Admin Dashboard</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage voting cycles, view results, and manage employees.</p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -393,8 +439,8 @@ export const AdminDashboard: React.FC = () => {
             disabled={!!activeCycle && activeCycle.status !== CycleStatus.CLOSED}
             className={`flex items-center px-5 py-2.5 text-white rounded-lg text-sm font-semibold shadow-sm transition-all ${
               activeCycle && activeCycle.status !== CycleStatus.CLOSED
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
+                ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 active:scale-95'
             }`}
             title={activeCycle && activeCycle.status !== CycleStatus.CLOSED ? "Close current cycle to start a new one" : "Start New Cycle"}
           >
@@ -405,23 +451,23 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Cycle Management Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Current Cycle Status</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Current Cycle Status</h2>
         
         {activeCycle ? (
-          <div className="flex flex-col md:flex-row items-center justify-between bg-gray-50 p-5 rounded-xl border border-gray-100">
+          <div className="flex flex-col md:flex-row items-center justify-between bg-gray-50 dark:bg-gray-700 p-5 rounded-xl border border-gray-100 dark:border-gray-600">
             <div className="mb-4 md:mb-0">
-              <span className="text-xl font-bold text-gray-900 mr-3">
+              <span className="text-xl font-bold text-gray-900 dark:text-white mr-3">
                 {MONTHS[activeCycle.month]} {activeCycle.year}
               </span>
               <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide
-                ${activeCycle.status === CycleStatus.NOMINATION ? 'bg-blue-100 text-blue-800' : 
-                  activeCycle.status === CycleStatus.VOTING ? 'bg-green-100 text-green-800' : 
-                  'bg-gray-100 text-gray-800'}`}>
+                ${activeCycle.status === CycleStatus.NOMINATION ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 
+                  activeCycle.status === CycleStatus.VOTING ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 
+                  'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300'}`}>
                 {activeCycle.status}
               </span>
               {activeCycle.nominationEnd && (
-                <div className="text-xs text-gray-500 mt-2 flex items-center">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex items-center">
                    <Clock className="w-3 h-3 mr-1" />
                    {activeCycle.status === CycleStatus.NOMINATION 
                      ? `Nomination ends ${new Date(activeCycle.nominationEnd).toLocaleDateString()} ${new Date(activeCycle.nominationEnd).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
@@ -437,7 +483,7 @@ export const AdminDashboard: React.FC = () => {
               {activeCycle.status === CycleStatus.NOMINATION && (
                 <button 
                   onClick={() => updateStatus(CycleStatus.VOTING)}
-                  className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium transition-colors shadow-sm"
+                  className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-500 text-sm font-medium transition-colors shadow-sm"
                 >
                   <Play className="w-4 h-4 mr-2" />
                   Force Start Voting
@@ -446,14 +492,14 @@ export const AdminDashboard: React.FC = () => {
               {activeCycle.status === CycleStatus.VOTING && (
                 <button 
                   onClick={() => updateStatus(CycleStatus.CLOSED)}
-                  className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors shadow-sm"
+                  className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-500 text-sm font-medium transition-colors shadow-sm"
                 >
                   <StopCircle className="w-4 h-4 mr-2" />
                   Close Cycle
                 </button>
               )}
               {activeCycle.status === CycleStatus.CLOSED && (
-                <button disabled className="flex items-center px-4 py-2 bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed text-sm font-medium border border-gray-200">
+                <button disabled className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-600 text-gray-400 dark:text-gray-300 rounded-lg cursor-not-allowed text-sm font-medium border border-gray-200 dark:border-gray-500">
                   <Archive className="w-4 h-4 mr-2" />
                   Archived
                 </button>
@@ -461,7 +507,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
         ) : (
-           <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-500">
+           <div className="text-center py-10 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
              No active cycle found. Create one to begin.
            </div>
         )}
@@ -486,13 +532,13 @@ export const AdminDashboard: React.FC = () => {
       {/* Results Visualization */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 min-w-0">
+        <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 min-w-0 transition-colors">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-gray-900">Real-time Results</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Real-time Results</h2>
             <button 
               onClick={handleExport}
               disabled={stats.length === 0}
-              className="flex items-center text-sm font-medium text-gray-600 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+              className="flex items-center text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
             >
               <Download className="w-4 h-4 mr-1.5" />
               Export CSV
@@ -503,87 +549,249 @@ export const AdminDashboard: React.FC = () => {
             <div style={{ width: '100%', height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="nomineeName" axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{fill: '#6b7280', fontSize: 12}} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#374151' : '#f0f0f0'} />
+                  <XAxis dataKey="nomineeName" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12}} />
                   <Tooltip 
-                    cursor={{ fill: '#f9fafb' }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                    cursor={{ fill: theme === 'dark' ? '#1f2937' : '#f9fafb' }}
+                    contentStyle={{ 
+                        backgroundColor: theme === 'dark' ? '#1f2937' : '#fff',
+                        borderColor: theme === 'dark' ? '#374151' : '#e5e7eb',
+                        color: theme === 'dark' ? '#fff' : '#000',
+                        borderRadius: '8px', 
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
+                    }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ color: theme === 'dark' ? '#e5e7eb' : '#374151' }} />
                   <Bar dataKey="nominationCount" name="Nominations" fill="#818cf8" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="voteCount" name="Votes" fill="#4f46e5" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-80 w-full flex items-center justify-center bg-gray-50 rounded-lg text-gray-400 border border-dashed border-gray-200">
+            <div className="h-80 w-full flex items-center justify-center bg-gray-50 dark:bg-gray-700/30 rounded-lg text-gray-400 border border-dashed border-gray-200 dark:border-gray-600">
               No data available for this cycle yet.
             </div>
           )}
         </div>
 
         {/* Top Candidates List */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Leaderboard</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Leaderboard</h2>
           <div className="space-y-3">
             {stats.length > 0 ? (
               stats.slice(0, 5).map((stat, index) => (
-                <div key={stat.nomineeId} className="flex items-center p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                <div key={stat.nomineeId} className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors border border-transparent hover:border-gray-100 dark:hover:border-gray-600">
                   <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm mr-3 shadow-sm ${
-                    index === 0 ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200' :
-                    index === 1 ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-200' :
-                    index === 2 ? 'bg-orange-100 text-orange-800 ring-1 ring-orange-200' :
-                    'bg-white border text-gray-500'
+                    index === 0 ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:ring-yellow-800' :
+                    index === 1 ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600' :
+                    index === 2 ? 'bg-orange-100 text-orange-800 ring-1 ring-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:ring-orange-800' :
+                    'bg-white border text-gray-500 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600'
                   }`}>
                     {index + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{stat.nomineeName}</p>
-                    <p className="text-xs text-gray-500">{stat.voteCount} votes • {stat.nominationCount} nominations</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{stat.nomineeName}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{stat.voteCount} votes • {stat.nominationCount} nominations</p>
                   </div>
-                  <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2.5 py-1 rounded-full">
                     {Math.round((stat.voteCount / (stats.reduce((acc, curr) => acc + curr.voteCount, 0) || 1)) * 100)}%
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-gray-500 text-center py-8">No votes cast yet.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No votes cast yet.</p>
             )}
           </div>
         </div>
       </div>
 
+      {/* Hall of Fame / Past Winners */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Hall of Fame</h2>
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">History of past Employee of the Month winners.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-600 uppercase tracking-wider text-xs">
+              <tr>
+                <th className="px-6 py-4">Period</th>
+                <th className="px-6 py-4">Winner</th>
+                <th className="px-6 py-4">Department</th>
+                <th className="px-6 py-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
+              {pastWinners.length > 0 ? (
+                pastWinners.map(cycle => {
+                  const winnerUser = users.find(u => u.id === cycle.winnerId);
+                  return (
+                    <tr key={cycle.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                        {MONTHS[cycle.month]} {cycle.year}
+                      </td>
+                      <td className="px-6 py-4">
+                        {winnerUser ? (
+                          <div className="flex items-center">
+                            {winnerUser.avatar ? (
+                              <img src={winnerUser.avatar} className="w-8 h-8 rounded-full mr-3 object-cover" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-xs mr-3">
+                                {winnerUser.name.charAt(0)}
+                              </div>
+                            )}
+                            <span className="font-medium text-gray-900 dark:text-white">{winnerUser.name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 italic">Unknown User</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                        {winnerUser?.department || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {winnerUser && (
+                          <button 
+                            onClick={() => setCertificateData({ user: winnerUser, cycle })}
+                            className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium text-xs inline-flex items-center hover:bg-indigo-50 dark:hover:bg-indigo-900/30 px-2 py-1 rounded"
+                          >
+                            <FileBadge className="w-3 h-3 mr-1" />
+                            Certificate
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    No past winners recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Employee Directory Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Employee Directory</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage user accounts and access.</p>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Employee Directory</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage user accounts and access.</p>
           </div>
           <button 
             onClick={() => setIsAddUserModalOpen(true)}
-            className="flex items-center justify-center px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium transition-all shadow-sm active:scale-95"
+            className="flex items-center justify-center px-4 py-2.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-all shadow-sm active:scale-95"
           >
             <UserPlus className="w-4 h-4 mr-2" />
             Add Employee
           </button>
         </div>
+
+        {/* Directory Filters & Search */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-700/30 border-b border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input 
+                    type="text" 
+                    placeholder="Search employees..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                />
+            </div>
+            
+            <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <select 
+                    value={filterRole} 
+                    onChange={e => setFilterRole(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none appearance-none cursor-pointer bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                    <option value="ALL">All Roles</option>
+                    <option value={UserRole.ADMIN}>Admin</option>
+                    <option value={UserRole.EMPLOYEE}>Employee</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-500">
+                  <ChevronDown className="w-3 h-3" />
+                </div>
+            </div>
+
+            <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-gray-400"></div>
+                <select 
+                     value={filterStatus}
+                     onChange={e => setFilterStatus(e.target.value)}
+                     className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none appearance-none cursor-pointer bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                    <option value="ALL">All Status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-500">
+                  <ChevronDown className="w-3 h-3" />
+                </div>
+            </div>
+
+            <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <select 
+                     value={filterDepartment}
+                     onChange={e => setFilterDepartment(e.target.value)}
+                     className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none appearance-none cursor-pointer bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                    <option value="ALL">All Departments</option>
+                    {uniqueDepartments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-500">
+                  <ChevronDown className="w-3 h-3" />
+                </div>
+            </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200 uppercase tracking-wider text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-600 uppercase tracking-wider text-xs">
               <tr>
-                <th className="px-6 py-4">Name</th>
-                <th className="px-6 py-4">Email</th>
-                <th className="px-6 py-4">Department</th>
+                <th 
+                    className="px-6 py-4 cursor-pointer group hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none" 
+                    onClick={() => handleSort('name')}
+                >
+                    <div className="flex items-center">
+                        Name <SortIcon column="name" />
+                    </div>
+                </th>
+                <th 
+                    className="px-6 py-4 cursor-pointer group hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                    onClick={() => handleSort('email')}
+                >
+                    <div className="flex items-center">
+                        Email <SortIcon column="email" />
+                    </div>
+                </th>
+                <th 
+                    className="px-6 py-4 cursor-pointer group hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                    onClick={() => handleSort('department')}
+                >
+                    <div className="flex items-center">
+                        Department <SortIcon column="department" />
+                    </div>
+                </th>
                 <th className="px-6 py-4">Role</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
-              {users.map(user => (
-                <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
+              {processedUsers.map(user => (
+                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                   <td className="px-6 py-4">
                     <div 
                       onClick={() => handleViewProfile(user)}
@@ -591,29 +799,29 @@ export const AdminDashboard: React.FC = () => {
                     >
                       {user.avatar ? (
                         <img 
-                          className="h-9 w-9 rounded-full object-cover mr-3 border border-gray-200 group-hover:ring-2 ring-indigo-200 transition-all" 
+                          className="h-9 w-9 rounded-full object-cover mr-3 border border-gray-200 dark:border-gray-600 group-hover:ring-2 ring-indigo-200 transition-all" 
                           src={user.avatar} 
                           alt={user.name} 
                         />
                       ) : (
-                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center text-indigo-700 font-bold text-sm mr-3 border border-indigo-200 shadow-sm group-hover:ring-2 ring-indigo-200 transition-all">
+                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-50 dark:from-indigo-900 dark:to-indigo-800 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-sm mr-3 border border-indigo-200 dark:border-indigo-700 shadow-sm group-hover:ring-2 ring-indigo-200 transition-all">
                           {user.name.charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <span className="font-medium text-gray-900 group-hover:text-indigo-600 transition-colors">{user.name}</span>
+                      <span className="font-medium text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{user.name}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-500">{user.email}</td>
-                  <td className="px-6 py-4 text-gray-500">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">{user.email}</td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
                       {user.department}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                       user.role === UserRole.ADMIN 
-                        ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' 
+                        : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
                     }`}>
                       {user.role === UserRole.ADMIN ? 'Admin' : 'Employee'}
                     </span>
@@ -621,8 +829,8 @@ export const AdminDashboard: React.FC = () => {
                   <td className="px-6 py-4">
                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                       user.status === 'ACTIVE' 
-                        ? 'bg-green-50 text-green-700 border-green-200' 
-                        : 'bg-gray-100 text-gray-600 border-gray-200'
+                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800' 
+                        : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600'
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${user.status === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-400'}`}></span>
                       {user.status === 'ACTIVE' ? 'Active' : 'Inactive'}
@@ -632,7 +840,7 @@ export const AdminDashboard: React.FC = () => {
                     <div className="flex items-center justify-end space-x-2">
                       <button 
                         onClick={() => handleEditClick(user)}
-                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 dark:text-gray-400 dark:hover:text-indigo-400 rounded-lg transition-colors"
                         title="Edit Employee"
                       >
                         <Pencil className="w-4 h-4" />
@@ -641,8 +849,8 @@ export const AdminDashboard: React.FC = () => {
                         onClick={() => toggleUserStatus(user)}
                         className={`p-1.5 rounded-lg transition-colors ${
                           user.status === 'ACTIVE' 
-                            ? 'text-gray-500 hover:text-red-600 hover:bg-red-50' 
-                            : 'text-red-600 hover:text-green-600 hover:bg-green-50'
+                            ? 'text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 dark:text-gray-400 dark:hover:text-red-400' 
+                            : 'text-red-600 hover:text-green-600 hover:bg-green-50 dark:text-red-400 dark:hover:text-green-400 dark:hover:bg-green-900/30'
                         }`}
                         title={user.status === 'ACTIVE' ? "Deactivate Employee" : "Activate Employee"}
                       >
@@ -654,31 +862,43 @@ export const AdminDashboard: React.FC = () => {
               ))}
             </tbody>
           </table>
-          {users.length === 0 && (
-            <div className="text-center py-8 text-gray-400 bg-gray-50 border-t border-gray-100">
-               No employees found or access restricted.
+          {processedUsers.length === 0 && (
+            <div className="text-center py-12 text-gray-400 bg-gray-50 dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+               <Search className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+               <p>No employees found matching your filters.</p>
+               <button 
+                 onClick={() => {
+                   setSearchQuery('');
+                   setFilterRole('ALL');
+                   setFilterStatus('ALL');
+                   setFilterDepartment('ALL');
+                 }}
+                 className="mt-2 text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-medium"
+               >
+                 Clear all filters
+               </button>
             </div>
           )}
         </div>
       </div>
 
       {/* Certificate Modal */}
-      {isCertificateOpen && winner && activeCycle && (
+      {certificateData && (
         <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800">Certificate Preview</h3>
-                    <button onClick={() => setIsCertificateOpen(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[90vh]">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800 dark:text-white">Certificate Preview</h3>
+                    <button onClick={() => setCertificateData(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-auto p-8 bg-gray-100 flex justify-center">
+                <div className="flex-1 overflow-auto p-8 bg-gray-100 dark:bg-gray-900 flex justify-center">
                     {/* Certificate Container to Capture */}
                     <div 
                         ref={certificateRef}
                         className="bg-white w-[800px] h-[600px] shadow-2xl relative flex flex-col p-12 text-center items-center justify-between border-[16px] border-double border-[#C5A059]"
-                        style={{ minWidth: '800px', minHeight: '600px' }}
+                        style={{ minWidth: '800px', minHeight: '600px', color: 'black' }} // Force black text for certificate
                     >
                         {/* Decorative Corners */}
                         <div className="absolute top-4 left-4 w-24 h-24 border-t-4 border-l-4 border-[#C5A059] opacity-50"></div>
@@ -697,7 +917,7 @@ export const AdminDashboard: React.FC = () => {
                             <div className="my-8 w-full">
                                 <p className="text-gray-500 italic text-lg mb-6">This certificate is proudly presented to</p>
                                 <h2 className="text-6xl font-signature text-gray-900 mb-6 px-8 border-b-2 border-gray-200 pb-2 inline-block min-w-[50%]">
-                                    {winner.name}
+                                    {certificateData.user.name}
                                 </h2>
                                 <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
                                     For outstanding performance and dedication, having been voted by colleagues as the
@@ -708,7 +928,7 @@ export const AdminDashboard: React.FC = () => {
                             <div className="flex justify-between w-full px-12 mt-auto mb-4 items-end">
                                 <div className="text-center">
                                     <div className="text-xl font-bold text-gray-800 border-b border-gray-400 pb-1 mb-2 min-w-[200px]">
-                                        {MONTHS[activeCycle.month]} {activeCycle.year}
+                                        {MONTHS[certificateData.cycle.month]} {certificateData.cycle.year}
                                     </div>
                                     <p className="text-xs text-gray-400 uppercase tracking-widest">Date</p>
                                 </div>
@@ -731,10 +951,10 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-white rounded-b-xl">
+                <div className="p-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 bg-white dark:bg-gray-800 rounded-b-xl">
                     <button 
-                        onClick={() => setIsCertificateOpen(false)}
-                        className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 font-medium rounded-lg"
+                        onClick={() => setCertificateData(null)}
+                        className="px-5 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg"
                     >
                         Close
                     </button>
@@ -760,24 +980,24 @@ export const AdminDashboard: React.FC = () => {
       {/* New Cycle Modal */}
       {isCreateCycleModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="text-lg font-bold text-gray-900">Start New Cycle</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Start New Cycle</h3>
               <button 
                 onClick={() => setIsCreateCycleModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <form onSubmit={handleCreateCycleSubmit} className="p-6 space-y-5">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Setup the month and duration for the new voting cycle.
               </p>
               
               {createCycleError && (
-                <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-100 flex items-center">
+                <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/30 p-3 rounded-lg border border-red-100 dark:border-red-900/50 flex items-center">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span>
                   {createCycleError}
                 </div>
@@ -785,13 +1005,13 @@ export const AdminDashboard: React.FC = () => {
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Month</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Month</label>
                   <div className="relative">
                     <select
                       required
                       value={createCycleForm.month}
                       onChange={e => setCreateCycleForm({ ...createCycleForm, month: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 appearance-none transition-all cursor-pointer"
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white appearance-none transition-all cursor-pointer"
                     >
                       {MONTHS.map((m, idx) => (
                          <option key={idx} value={idx}>
@@ -806,7 +1026,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Year</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Year</label>
                   <input
                     type="number"
                     required
@@ -814,56 +1034,56 @@ export const AdminDashboard: React.FC = () => {
                     max={new Date().getFullYear()}
                     value={createCycleForm.year}
                     onChange={e => setCreateCycleForm({ ...createCycleForm, year: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 transition-all"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all"
                   />
                 </div>
 
-                <div className="col-span-2 border-t border-gray-100 pt-4 mt-2">
-                    <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
+                <div className="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-4 mt-2">
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center">
                         <Calendar className="w-4 h-4 mr-2 text-indigo-500" />
                         Phase Schedule
                     </h4>
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 mb-1">Nomination Start</label>
+                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Nomination Start</label>
                    <input 
                      type="datetime-local" 
                      required
                      value={createCycleForm.nominationStart}
                      onChange={e => setCreateCycleForm({...createCycleForm, nominationStart: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                    />
                 </div>
                 <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 mb-1">Nomination End</label>
+                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Nomination End</label>
                    <input 
                      type="datetime-local" 
                      required
                      value={createCycleForm.nominationEnd}
                      onChange={e => setCreateCycleForm({...createCycleForm, nominationEnd: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                    />
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 mb-1">Voting Start</label>
+                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Voting Start</label>
                    <input 
                      type="datetime-local" 
                      required
                      value={createCycleForm.votingStart}
                      onChange={e => setCreateCycleForm({...createCycleForm, votingStart: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                    />
                 </div>
                 <div className="col-span-1">
-                   <label className="block text-xs font-semibold text-gray-600 mb-1">Voting End</label>
+                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Voting End</label>
                    <input 
                      type="datetime-local" 
                      required
                      value={createCycleForm.votingEnd}
                      onChange={e => setCreateCycleForm({...createCycleForm, votingEnd: e.target.value})}
-                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
+                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                    />
                 </div>
               </div>
@@ -872,7 +1092,7 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsCreateCycleModalOpen(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
                 >
                   Cancel
                 </button>
@@ -891,32 +1111,36 @@ export const AdminDashboard: React.FC = () => {
       {/* Employee Profile Modal */}
       {viewingUser && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-3xl w-full my-8 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             {/* Header */}
-            <div className="p-6 border-b border-gray-100 flex items-start justify-between bg-gray-50/50 rounded-t-2xl">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between bg-gray-50/50 dark:bg-gray-700/50 rounded-t-2xl">
               <div className="flex items-center gap-5">
                 {viewingUser.avatar ? (
-                  <img src={viewingUser.avatar} alt="" className="w-20 h-20 rounded-full border-4 border-white shadow-sm object-cover" />
+                  <img src={viewingUser.avatar} alt="" className="w-20 h-20 rounded-full border-4 border-white dark:border-gray-600 shadow-sm object-cover" />
                 ) : (
-                  <div className="w-20 h-20 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-3xl font-bold border-4 border-white shadow-sm">
+                  <div className="w-20 h-20 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-300 text-3xl font-bold border-4 border-white dark:border-gray-600 shadow-sm">
                     {viewingUser.name.charAt(0)}
                   </div>
                 )}
                 <div>
-                  <h3 className="text-2xl font-bold text-gray-900">{viewingUser.name}</h3>
-                  <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                    <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-medium">{viewingUser.department}</span>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{viewingUser.name}</h3>
+                  <div className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-700 dark:text-gray-300 font-medium">{viewingUser.department}</span>
                     <span>•</span>
                     <span>{viewingUser.email}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                      viewingUser.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+                      viewingUser.status === 'ACTIVE' 
+                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800' 
+                        : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
                     }`}>
                       {viewingUser.status}
                     </span>
                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${
-                      viewingUser.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                      viewingUser.role === UserRole.ADMIN 
+                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800' 
+                        : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
                     }`}>
                       {viewingUser.role}
                     </span>
@@ -925,7 +1149,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
               <button 
                 onClick={() => setViewingUser(null)}
-                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -935,24 +1159,24 @@ export const AdminDashboard: React.FC = () => {
             <div className="overflow-y-auto flex-1 p-6">
               {/* Stats Cards */}
               <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-4">
-                  <div className="p-3 bg-white rounded-lg shadow-sm text-indigo-600">
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 flex items-center gap-4">
+                  <div className="p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm text-indigo-600 dark:text-indigo-400">
                     <Award className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-indigo-900">Total Nominations</p>
-                    <p className="text-2xl font-bold text-indigo-700">
+                    <p className="text-sm font-medium text-indigo-900 dark:text-indigo-300">Total Nominations</p>
+                    <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">
                       {userHistory.reduce((acc, h) => acc + h.activity.receivedNominations.length, 0)}
                     </p>
                   </div>
                 </div>
-                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
-                  <div className="p-3 bg-white rounded-lg shadow-sm text-purple-600">
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800 flex items-center gap-4">
+                  <div className="p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm text-purple-600 dark:text-purple-400">
                     <Vote className="w-6 h-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-purple-900">Total Votes Received</p>
-                    <p className="text-2xl font-bold text-purple-700">
+                    <p className="text-sm font-medium text-purple-900 dark:text-purple-300">Total Votes Received</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-400">
                        {userHistory.reduce((acc, h) => acc + h.activity.votesReceived, 0)}
                     </p>
                   </div>
@@ -960,20 +1184,20 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {/* History Timeline */}
-              <h4 className="font-bold text-gray-900 mb-4 flex items-center">
-                <Calendar className="w-4 h-4 mr-2 text-gray-500" />
+              <h4 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                <Calendar className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
                 History & Activity
               </h4>
               <div className="space-y-6">
                 {userHistory.map((item, idx) => (
-                  <div key={idx} className="relative pl-8 pb-2 border-l-2 border-gray-100 last:border-0">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-gray-200 border-4 border-white shadow-sm"></div>
+                  <div key={idx} className="relative pl-8 pb-2 border-l-2 border-gray-100 dark:border-gray-700 last:border-0">
+                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-white dark:border-gray-800 shadow-sm"></div>
                     
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="font-semibold text-gray-900">
+                      <span className="font-semibold text-gray-900 dark:text-white">
                         {MONTHS[item.cycle.month]} {item.cycle.year}
                       </span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
                         {item.cycle.status}
                       </span>
                     </div>
@@ -982,12 +1206,12 @@ export const AdminDashboard: React.FC = () => {
                     {item.activity.receivedNominations.length > 0 && (
                       <div className="space-y-3 mb-4">
                         {item.activity.receivedNominations.map((nom: any, nIdx: number) => (
-                          <div key={nIdx} className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <div key={nIdx} className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
                             <div className="flex items-start gap-3">
                               <MessageSquare className="w-4 h-4 text-indigo-400 mt-1 shrink-0" />
                               <div>
-                                <p className="text-sm text-gray-800 italic">"{nom.reason}"</p>
-                                <p className="text-xs text-gray-500 mt-1 font-medium">— Nominated by {nom.from}</p>
+                                <p className="text-sm text-gray-800 dark:text-gray-200 italic">"{nom.reason}"</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">— Nominated by {nom.from}</p>
                               </div>
                             </div>
                           </div>
@@ -996,13 +1220,13 @@ export const AdminDashboard: React.FC = () => {
                     )}
 
                     {/* User Activity */}
-                    <div className="flex gap-4 text-sm text-gray-600 mt-2">
+                    <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-2">
                        <div className="flex items-center gap-2">
-                         <span className={`w-2 h-2 rounded-full ${item.activity.nominated ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                         <span className={`w-2 h-2 rounded-full ${item.activity.nominated ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
                          {item.activity.nominated ? `Nominated ${item.activity.nominated.name}` : 'Did not nominate'}
                        </div>
                        <div className="flex items-center gap-2">
-                         <span className={`w-2 h-2 rounded-full ${item.activity.voted ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                         <span className={`w-2 h-2 rounded-full ${item.activity.voted ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></span>
                          {item.activity.voted ? 'Voted' : 'Did not vote'}
                        </div>
                     </div>
@@ -1010,15 +1234,15 @@ export const AdminDashboard: React.FC = () => {
                 ))}
                 
                 {userHistory.length === 0 && (
-                   <div className="text-center py-8 text-gray-400">No history found for this employee.</div>
+                   <div className="text-center py-8 text-gray-400 dark:text-gray-500">No history found for this employee.</div>
                 )}
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex justify-end">
+            <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-b-2xl flex justify-end">
               <button
                 onClick={() => setViewingUser(null)}
-                className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm"
+                className="px-5 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm"
               >
                 Close Profile
               </button>
@@ -1030,12 +1254,12 @@ export const AdminDashboard: React.FC = () => {
       {/* Edit User Modal */}
       {isEditModalOpen && editingUser && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="text-lg font-bold text-gray-900">Edit Employee</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Employee</h3>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1043,35 +1267,35 @@ export const AdminDashboard: React.FC = () => {
             
             <form onSubmit={handleUserUpdate} className="p-6 space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
                 <input
                   type="text"
                   required
                   value={editingUser.name}
-                  onChange={e => setEditingUser({ ...editingUser, name: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all"
+                  onChange={e => setEditingUser({ ...editingUser,name: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Department</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Department</label>
                 <input
                   type="text"
                   required
                   value={editingUser.department}
                   onChange={e => setEditingUser({ ...editingUser, department: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
                 <input
                   type="email"
                   required
                   disabled
                   value={editingUser.email}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed shadow-sm"
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed shadow-sm"
                 />
                 <p className="text-xs text-gray-400 mt-1.5 flex items-center">
                   <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></span>
@@ -1083,7 +1307,7 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1102,12 +1326,12 @@ export const AdminDashboard: React.FC = () => {
       {/* Add User Modal */}
       {isAddUserModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="text-lg font-bold text-gray-900">Add New Employee</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add New Employee</h3>
               <button 
                 onClick={() => setIsAddUserModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1115,43 +1339,43 @@ export const AdminDashboard: React.FC = () => {
             
             <form onSubmit={handleAddUserSubmit} className="p-6 space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
                 <input
                   type="text"
                   required
                   value={newUser.name}
                   onChange={e => setNewUser({ ...newUser, name: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all"
                   placeholder="e.g. John Doe"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
                 <input
                   type="email"
                   required
                   value={newUser.email}
                   onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all"
                   placeholder="e.g. john@company.com"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Department</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Department</label>
                 <input
                   type="text"
                   required
                   value={newUser.department}
                   onChange={e => setNewUser({ ...newUser, department: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all"
                   placeholder="e.g. Engineering"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Password</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Lock className="h-4 w-4 text-gray-400" />
@@ -1161,20 +1385,20 @@ export const AdminDashboard: React.FC = () => {
                     required={false}
                     value={newUser.password}
                     onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 transition-all"
+                    className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all"
                     placeholder="Leave blank for default (password123)"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Role</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Role</label>
                 <div className="relative">
                   <select
                     required
                     value={newUser.role}
                     onChange={e => setNewUser({ ...newUser, role: e.target.value as UserRole })}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 appearance-none transition-all cursor-pointer"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white appearance-none transition-all cursor-pointer"
                   >
                     <option value={UserRole.EMPLOYEE}>Employee</option>
                     <option value={UserRole.ADMIN}>Admin</option>
@@ -1186,7 +1410,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               {addUserError && (
-                <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-100 flex items-center">
+                <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/30 p-3 rounded-lg border border-red-100 dark:border-red-900/50 flex items-center">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span>
                   {addUserError}
                 </div>
@@ -1196,7 +1420,7 @@ export const AdminDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddUserModalOpen(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-colors"
                 >
                   Cancel
                 </button>

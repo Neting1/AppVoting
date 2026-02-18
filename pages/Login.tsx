@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { dbService } from '../services/db';
 import { Medal, Lock, User } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -24,11 +25,19 @@ export const Login: React.FC = () => {
         setError('Invalid email address or password.');
       }
     } catch (err: any) {
-      // Check for specific error message from AuthContext
       if (err.message && err.message.includes("Account setup incomplete")) {
         setError(err.message);
       } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-        setError('Invalid email address or password.');
+        try {
+            const existingUser = await dbService.getUserByEmail(email);
+            if (existingUser) {
+                setError("Account setup incomplete. Please register again to claim your account.");
+            } else {
+                setError('Invalid email address or password.');
+            }
+        } catch (dbError) {
+            setError('Invalid email address or password.');
+        }
       } else {
         setError('An error occurred during login. Please try again.');
       }
@@ -38,9 +47,9 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="bg-indigo-600 p-8 text-center">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transition-colors">
+        <div className="bg-indigo-600 dark:bg-indigo-700 p-8 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/20 mb-4 backdrop-blur-sm">
             <Medal className="w-8 h-8 text-white" />
           </div>
@@ -51,7 +60,7 @@ export const Login: React.FC = () => {
         <div className="p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
+              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Email Address
               </label>
               <div className="relative">
@@ -62,7 +71,7 @@ export const Login: React.FC = () => {
                   id="email"
                   type="email"
                   required
-                  className="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white text-gray-900 placeholder-gray-400 shadow-sm"
+                  className="block w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 shadow-sm"
                   placeholder="name@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -72,10 +81,10 @@ export const Login: React.FC = () => {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label htmlFor="password" className="block text-sm font-semibold text-gray-700">
+                <label htmlFor="password" className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Password
                 </label>
-                <Link to="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+                <Link to="/forgot-password" className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 font-medium">
                   Forgot password?
                 </Link>
               </div>
@@ -87,7 +96,7 @@ export const Login: React.FC = () => {
                   id="password"
                   type="password"
                   required
-                  className="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white text-gray-900 placeholder-gray-400 shadow-sm"
+                  className="block w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 shadow-sm"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -96,12 +105,12 @@ export const Login: React.FC = () => {
             </div>
 
             {error && (
-              <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 flex items-start">
+              <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg border border-red-100 dark:border-red-900/50 flex items-start">
                 <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
                 <div className="flex-1">
                   {error}
-                  {error.includes("register again") && (
-                    <Link to="/register" className="block mt-1 font-bold underline hover:text-red-800">
+                  {(error.includes("register again") || error.includes("claim")) && (
+                    <Link to="/register" className="block mt-1 font-bold underline hover:text-red-800 dark:hover:text-red-300">
                       Go to Registration
                     </Link>
                   )}
@@ -112,15 +121,15 @@ export const Login: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
             >
               {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
 
             <div className="text-center mt-4">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Don't have an account?{' '}
-                <Link to="/register" className="font-semibold text-indigo-600 hover:text-indigo-500">
+                <Link to="/register" className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
                   Create an account
                 </Link>
               </p>

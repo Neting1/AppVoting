@@ -24,10 +24,8 @@ export const Nominate: React.FC = () => {
         setActiveCycle(cycle);
 
         const allEmployees = await dbService.getEmployees();
-        // Filter out current user from potential nominees
         setEmployees(allEmployees.filter(e => e.id !== user?.id));
 
-        // Check if already nominated
         if (user && cycle) {
           const existing = await dbService.getUserNomination(user.id, cycle.id);
           if (existing) {
@@ -48,7 +46,6 @@ export const Nominate: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user) return;
     
-    // Safety check for date time before submitting
     if (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd) {
         setError("The nomination period has ended.");
         return;
@@ -64,10 +61,9 @@ export const Nominate: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading...</div>;
+    return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
-  // Strict check on status AND time if provided
   const isClosed = !activeCycle || 
                    activeCycle.status !== CycleStatus.NOMINATION || 
                    (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd);
@@ -75,12 +71,12 @@ export const Nominate: React.FC = () => {
   if (isClosed) {
     return (
       <div className="text-center py-16">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Send className="w-8 h-8 text-gray-400" />
+        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Send className="w-8 h-8 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-xl font-bold text-gray-900">Nominations Closed</h2>
-        <p className="text-gray-500 mt-2">The nomination phase is currently inactive.</p>
-        <button onClick={() => navigate('/')} className="mt-6 text-indigo-600 hover:text-indigo-800 font-medium hover:underline">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Nominations Closed</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">The nomination phase is currently inactive.</p>
+        <button onClick={() => navigate('/')} className="mt-6 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium hover:underline">
           Return to Dashboard
         </button>
       </div>
@@ -90,12 +86,12 @@ export const Nominate: React.FC = () => {
   if (success) {
     return (
       <div className="max-w-xl mx-auto text-center py-16 animate-in fade-in zoom-in duration-300">
-        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
+        <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
           <Send className="w-10 h-10" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Nomination Submitted!</h2>
-        <p className="text-gray-600 mt-3 text-lg">Thank you for recognizing your colleague's hard work.</p>
-        <p className="text-gray-400 text-sm mt-8 animate-pulse">Redirecting to dashboard...</p>
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Nomination Submitted!</h2>
+        <p className="text-gray-600 dark:text-gray-300 mt-3 text-lg">Thank you for recognizing your colleague's hard work.</p>
+        <p className="text-gray-400 dark:text-gray-500 text-sm mt-8 animate-pulse">Redirecting to dashboard...</p>
       </div>
     );
   }
@@ -104,27 +100,27 @@ export const Nominate: React.FC = () => {
     <div className="max-w-2xl mx-auto">
       <button 
         onClick={() => navigate('/')}
-        className="flex items-center text-gray-500 hover:text-gray-900 mb-8 transition-colors group"
+        className="flex items-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-8 transition-colors group"
       >
         <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
         Back to Dashboard
       </button>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-8 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="text-2xl font-bold text-gray-900">Nominate a Colleague</h2>
-          <p className="text-gray-500 mt-2">Select an employee and share why they deserve to be Employee of the Month.</p>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+        <div className="p-8 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Nominate a Colleague</h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">Select an employee and share why they deserve to be Employee of the Month.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Select Nominee</label>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Select Nominee</label>
             <div className="relative">
               <select
                 required
                 value={selectedNominee}
                 onChange={(e) => setSelectedNominee(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 appearance-none transition-all cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white appearance-none transition-all cursor-pointer"
               >
                 <option value="">-- Choose an employee --</option>
                 {employees.map(emp => (
@@ -140,23 +136,23 @@ export const Nominate: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Reason for Nomination</label>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Reason for Nomination</label>
             <textarea
               required
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={5}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white text-gray-900 placeholder-gray-400 transition-all resize-none"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none"
               placeholder="Describe their achievements, attitude, or specific contributions that make them stand out..."
             ></textarea>
-            <p className="mt-2 text-xs text-gray-500 flex items-center">
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center">
               <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5"></span>
               Your nomination is anonymous to the nominee, but visible to admins.
             </p>
           </div>
 
           {error && (
-            <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm border border-red-100 flex items-center">
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm border border-red-100 dark:border-red-900/50 flex items-center">
               <span className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span>
               {error}
             </div>
@@ -165,7 +161,7 @@ export const Nominate: React.FC = () => {
           <div className="flex justify-end pt-4">
             <button
               type="submit"
-              className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all shadow-sm hover:shadow active:scale-[0.99]"
+              className="px-8 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all shadow-sm hover:shadow active:scale-[0.99]"
             >
               Submit Nomination
             </button>

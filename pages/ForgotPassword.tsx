@@ -20,7 +20,6 @@ export const ForgotPassword: React.FC = () => {
       setIsSubmitted(true);
     } catch (err: any) {
       if (err.code === 'auth/user-not-found') {
-        // For UX, allow generic message or specific. Since this is likely internal/enterprise, specific is fine.
         setError('No account found with this email address.');
       } else if (err.code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
@@ -33,9 +32,9 @@ export const ForgotPassword: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="bg-indigo-600 p-6 text-center relative">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-100 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden transition-colors">
+        <div className="bg-indigo-600 dark:bg-indigo-700 p-6 text-center relative">
           <Link to="/login" className="absolute top-6 left-6 text-indigo-200 hover:text-white transition-colors">
             <ArrowLeft className="w-6 h-6" />
           </Link>
@@ -49,11 +48,11 @@ export const ForgotPassword: React.FC = () => {
         <div className="p-8">
           {isSubmitted ? (
             <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle className="w-8 h-8" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Check your email</h3>
-              <p className="text-gray-600 mb-6">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Check your email</h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
                 We have sent a password reset link to <strong>{email}</strong>.
               </p>
               <Link
@@ -65,12 +64,12 @@ export const ForgotPassword: React.FC = () => {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
-              <p className="text-gray-600 text-sm text-center">
+              <p className="text-gray-600 dark:text-gray-300 text-sm text-center">
                 Enter your email address and we'll send you a link to reset your password.
               </p>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
+                <label htmlFor="email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                   Email Address
                 </label>
                 <div className="relative">
@@ -81,7 +80,7 @@ export const ForgotPassword: React.FC = () => {
                     id="email"
                     type="email"
                     required
-                    className="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white text-gray-900 placeholder-gray-400 shadow-sm"
+                    className="block w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 shadow-sm"
                     placeholder="name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -90,7 +89,7 @@ export const ForgotPassword: React.FC = () => {
               </div>
 
               {error && (
-                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 flex items-start">
+                <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg border border-red-100 dark:border-red-900/50 flex items-start">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
                   {error}
                 </div>
@@ -99,7 +98,7 @@ export const ForgotPassword: React.FC = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
               >
                 {isLoading ? 'Sending Link...' : 'Send Reset Link'}
               </button>
