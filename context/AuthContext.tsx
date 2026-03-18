@@ -27,6 +27,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
   const [loading, setLoading] = useState(true);
 
+  // Auth State Listener
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
 
@@ -167,6 +168,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       throw error;
     }
   };
+
+  // Inactivity Timer Logic
+  useEffect(() => {
+    if (!state.isAuthenticated) return;
+
+    const INACTIVITY_LIMIT = 3 * 60 * 1000; // 3 minutes in milliseconds
+    let activityTimer: ReturnType<typeof setTimeout>;
+
+    const handleInactivity = () => {
+      logout();
+      alert("You have been automatically logged out due to inactivity (3 minutes). Please log in again.");
+    };
+
+    const resetTimer = () => {
+      if (activityTimer) clearTimeout(activityTimer);
+      activityTimer = setTimeout(handleInactivity, INACTIVITY_LIMIT);
+    };
+
+    // Events to monitor for activity
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    
+    // Attach event listeners
+    events.forEach(event => {
+      document.addEventListener(event, resetTimer);
+    });
+
+    // Start initial timer
+    resetTimer();
+
+    // Cleanup function
+    return () => {
+      if (activityTimer) clearTimeout(activityTimer);
+      events.forEach(event => {
+        document.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [state.isAuthenticated]); // Re-run only when authentication state changes
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-400">Loading application...</div>;
