@@ -184,15 +184,16 @@ export const AdminDashboard: React.FC = () => {
         : <ChevronDown className="w-4 h-4 ml-1 text-indigo-600 dark:text-indigo-400" />;
   };
 
+  const toLocalISO = (d: Date) => {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const handleOpenCreateCycle = () => {
     const now = new Date();
     const nomEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const voteStart = nomEnd;
     const voteEnd = new Date(nomEnd.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const toLocalISO = (d: Date) => {
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
     setCreateCycleForm({ 
         month: now.getMonth(), 
         year: now.getFullYear(),
@@ -987,8 +988,8 @@ export const AdminDashboard: React.FC = () => {
       {/* New Cycle Modal */}
       {isCreateCycleModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Start New Cycle</h3>
               <button 
                 onClick={() => setIsCreateCycleModalOpen(false)}
@@ -998,7 +999,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
             
-            <form onSubmit={handleCreateCycleSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleCreateCycleSubmit} className="p-6 space-y-5 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Month</label>
@@ -1027,6 +1028,7 @@ export const AdminDashboard: React.FC = () => {
                 <input
                   type="datetime-local"
                   required
+                  min={toLocalISO(new Date())}
                   value={createCycleForm.nominationStart}
                   onChange={e => setCreateCycleForm({ ...createCycleForm, nominationStart: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1038,6 +1040,7 @@ export const AdminDashboard: React.FC = () => {
                 <input
                   type="datetime-local"
                   required
+                  min={createCycleForm.nominationStart || toLocalISO(new Date())}
                   value={createCycleForm.nominationEnd}
                   onChange={e => setCreateCycleForm({ ...createCycleForm, nominationEnd: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1049,6 +1052,7 @@ export const AdminDashboard: React.FC = () => {
                 <input
                   type="datetime-local"
                   required
+                  min={createCycleForm.nominationEnd || toLocalISO(new Date())}
                   value={createCycleForm.votingStart}
                   onChange={e => setCreateCycleForm({ ...createCycleForm, votingStart: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1060,6 +1064,7 @@ export const AdminDashboard: React.FC = () => {
                 <input
                   type="datetime-local"
                   required
+                  min={createCycleForm.votingStart || toLocalISO(new Date())}
                   value={createCycleForm.votingEnd}
                   onChange={e => setCreateCycleForm({ ...createCycleForm, votingEnd: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1096,8 +1101,8 @@ export const AdminDashboard: React.FC = () => {
       {/* Add Employee Modal */}
       {isAddUserModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add Employee</h3>
               <button 
                 onClick={() => setIsAddUserModalOpen(false)}
@@ -1107,7 +1112,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
             
-            <form onSubmit={handleAddUserSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleAddUserSubmit} className="p-6 space-y-5 overflow-y-auto">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
                 <input
@@ -1209,8 +1214,8 @@ export const AdminDashboard: React.FC = () => {
       {/* Edit Employee Modal */}
       {isEditModalOpen && editingUser && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Employee</h3>
               <button 
                 onClick={() => setIsEditModalOpen(false)}
@@ -1220,7 +1225,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </div>
             
-            <form onSubmit={handleUserUpdate} className="p-6 space-y-5">
+            <form onSubmit={handleUserUpdate} className="p-6 space-y-5 overflow-y-auto">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Full Name</label>
                 <input
