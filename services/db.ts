@@ -15,14 +15,68 @@ import {
   deleteDoc,
   onSnapshot
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import { User, UserRole, Cycle, CycleStatus, Nomination, Vote, CycleStats } from '../types';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    isAnonymous?: boolean;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Helper to handle Firestore operations
 const safeGetDocs = async (q: any) => {
   try {
     return await getDocs(q);
   } catch (error: any) {
+    if (error.code === 'permission-denied') {
+      handleFirestoreError(error, OperationType.LIST, q.type === 'query' ? 'query' : 'collection');
+    }
     console.error("Firestore operation failed:", error.code, error.message);
     // Return empty result to prevent app crash, but log error
     return { docs: [], empty: true };
@@ -231,10 +285,10 @@ export const dbService = {
       if (now >= activeCycle.votingEnd && activeCycle.status !== CycleStatus.CLOSED) {
         newStatus = CycleStatus.CLOSED;
         needsUpdate = true;
-      } else if (now >= activeCycle.nominationEnd && now < activeCycle.votingEnd && activeCycle.status === CycleStatus.NOMINATION) {
+      } else if (now >= activeCycle.votingStart && now < activeCycle.votingEnd && activeCycle.status === CycleStatus.NOMINATION) {
         newStatus = CycleStatus.VOTING;
         needsUpdate = true;
-      } else if (now < activeCycle.nominationEnd && activeCycle.status !== CycleStatus.NOMINATION && activeCycle.status !== CycleStatus.CLOSED) {
+      } else if (now < activeCycle.nominationStart && activeCycle.status !== CycleStatus.NOMINATION && activeCycle.status !== CycleStatus.CLOSED) {
          // This case handles if we somehow went back in time, or logic correction, but mainly:
          // If it's VOTING but actually time is Nomination time (e.g. admin edited dates)
          newStatus = CycleStatus.NOMINATION;
@@ -330,7 +384,14 @@ export const dbService = {
       reason,
       timestamp: Date.now()
     };
-    await addDoc(collection(db, 'nominations'), nomData);
+    try {
+      await addDoc(collection(db, 'nominations'), nomData);
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        handleFirestoreError(error, OperationType.CREATE, 'nominations');
+      }
+      throw error;
+    }
   },
 
   getVotes: async (cycleId: string): Promise<Vote[]> => {
@@ -364,7 +425,14 @@ export const dbService = {
       cycleId,
       timestamp: Date.now()
     };
-    await addDoc(collection(db, 'votes'), voteData);
+    try {
+      await addDoc(collection(db, 'votes'), voteData);
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        handleFirestoreError(error, OperationType.CREATE, 'votes');
+      }
+      throw error;
+    }
   },
 
   getCycleStats: async (cycleId: string): Promise<CycleStats[]> => {

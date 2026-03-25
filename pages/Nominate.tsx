@@ -46,6 +46,10 @@ export const Nominate: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user) return;
     
+    if (activeCycle.nominationStart && Date.now() < activeCycle.nominationStart) {
+        setError("The nomination period has not started yet.");
+        return;
+    }
     if (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd) {
         setError("The nomination period has ended.");
         return;
@@ -56,7 +60,16 @@ export const Nominate: React.FC = () => {
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err: any) {
-      setError(err.message);
+      try {
+        const errorData = JSON.parse(err.message);
+        if (errorData.error) {
+          setError("Permission denied. Please check your Firestore Security Rules.");
+        } else {
+          setError(err.message);
+        }
+      } catch (e) {
+        setError(err.message);
+      }
     }
   };
 
@@ -64,9 +77,11 @@ export const Nominate: React.FC = () => {
     return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
+  const now = Date.now();
   const isClosed = !activeCycle || 
                    activeCycle.status !== CycleStatus.NOMINATION || 
-                   (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd);
+                   (activeCycle.nominationStart && now < activeCycle.nominationStart) ||
+                   (activeCycle.nominationEnd && now > activeCycle.nominationEnd);
 
   if (isClosed) {
     return (

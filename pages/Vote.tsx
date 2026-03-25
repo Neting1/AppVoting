@@ -25,7 +25,6 @@ export const Vote: React.FC = () => {
         const now = Date.now();
         const isOpen = cycle && 
                        cycle.status === CycleStatus.VOTING && 
-                       (!cycle.votingStart || now >= cycle.votingStart) &&
                        (!cycle.votingEnd || now < cycle.votingEnd);
 
         if (isOpen && cycle) {
@@ -69,6 +68,10 @@ export const Vote: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user || !selectedCandidate) return;
 
+    if (activeCycle.votingStart && Date.now() < activeCycle.votingStart && activeCycle.status !== CycleStatus.VOTING) {
+        setError("The voting period has not started yet.");
+        return;
+    }
     if (activeCycle.votingEnd && Date.now() > activeCycle.votingEnd) {
         setError("The voting period has ended.");
         return;
@@ -79,7 +82,16 @@ export const Vote: React.FC = () => {
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err: any) {
-      setError(err.message);
+      try {
+        const errorData = JSON.parse(err.message);
+        if (errorData.error) {
+          setError("Permission denied. Please check your Firestore Security Rules.");
+        } else {
+          setError(err.message);
+        }
+      } catch (e) {
+        setError(err.message);
+      }
     }
   };
 
@@ -90,7 +102,6 @@ export const Vote: React.FC = () => {
   const now = Date.now();
   const isClosed = !activeCycle || 
                    activeCycle.status !== CycleStatus.VOTING || 
-                   (activeCycle.votingStart && now < activeCycle.votingStart) ||
                    (activeCycle.votingEnd && now > activeCycle.votingEnd);
 
   if (isClosed) {
