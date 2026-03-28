@@ -251,7 +251,11 @@ export const dbService = {
     const userRef = doc(db, 'users', user.id);
     const userData = { ...user };
     if ('password' in userData) delete userData.password;
-    await updateDoc(userRef, userData);
+    try {
+      await updateDoc(userRef, userData);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+    }
   },
 
   getCycles: async (): Promise<Cycle[]> => {
@@ -297,8 +301,12 @@ export const dbService = {
     }
 
     if (needsUpdate) {
-      const cycleRef = doc(db, 'cycles', activeCycle.id);
-      await updateDoc(cycleRef, { status: newStatus });
+      try {
+        const cycleRef = doc(db, 'cycles', activeCycle.id);
+        await updateDoc(cycleRef, { status: newStatus });
+      } catch (e) {
+        console.warn("Could not auto-update cycle status in DB (likely permission denied), but using updated status locally.");
+      }
       activeCycle.status = newStatus;
     }
 
@@ -338,18 +346,31 @@ export const dbService = {
       votingEnd: dates.voteEnd
     };
     
-    const docRef = await addDoc(collection(db, 'cycles'), cycleData);
-    return { id: docRef.id, ...cycleData } as Cycle;
+    try {
+      const docRef = await addDoc(collection(db, 'cycles'), cycleData);
+      return { id: docRef.id, ...cycleData } as Cycle;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'cycles');
+      throw error;
+    }
   },
 
   updateCycleStatus: async (cycleId: string, status: CycleStatus): Promise<void> => {
     const cycleRef = doc(db, 'cycles', cycleId);
-    await updateDoc(cycleRef, { status });
+    try {
+      await updateDoc(cycleRef, { status });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `cycles/${cycleId}`);
+    }
   },
 
   setCycleWinner: async (cycleId: string, winnerId: string): Promise<void> => {
     const cycleRef = doc(db, 'cycles', cycleId);
-    await updateDoc(cycleRef, { winnerId });
+    try {
+      await updateDoc(cycleRef, { winnerId });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `cycles/${cycleId}`);
+    }
   },
 
   getNominations: async (cycleId: string): Promise<Nomination[]> => {

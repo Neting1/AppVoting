@@ -46,12 +46,8 @@ export const Nominate: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user) return;
     
-    if (activeCycle.nominationStart && Date.now() < activeCycle.nominationStart) {
-        setError("The nomination period has not started yet.");
-        return;
-    }
-    if (activeCycle.nominationEnd && Date.now() > activeCycle.nominationEnd) {
-        setError("The nomination period has ended.");
+    if (activeCycle.status !== CycleStatus.NOMINATION) {
+        setError("The nomination period is not active.");
         return;
     }
 
@@ -77,11 +73,7 @@ export const Nominate: React.FC = () => {
     return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
-  const now = Date.now();
-  const isClosed = !activeCycle || 
-                   activeCycle.status !== CycleStatus.NOMINATION || 
-                   (activeCycle.nominationStart && now < activeCycle.nominationStart) ||
-                   (activeCycle.nominationEnd && now > activeCycle.nominationEnd);
+  const isClosed = !activeCycle || activeCycle.status !== CycleStatus.NOMINATION;
 
   if (isClosed) {
     return (

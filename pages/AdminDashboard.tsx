@@ -3,7 +3,7 @@ import { dbService } from '../services/db';
 import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, Vote, Trophy, Lock, Clock, FileBadge, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react';
+import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, XCircle, Vote, Trophy, Lock, Clock, FileBadge, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react';
 // @ts-ignore
 import confetti from 'canvas-confetti';
 // @ts-ignore
@@ -36,6 +36,7 @@ export const AdminDashboard: React.FC = () => {
   // Employee Management State
   const [users, setUsers] = useState<User[]>([]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // Directory Filters & Sort
@@ -316,6 +317,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleViewProfile = async (user: User) => {
     setViewingUser(user);
+    setIsProfileModalOpen(true);
     const history = await dbService.getEmployeeHistory(user.id);
     setUserHistory(history);
   };
@@ -1296,6 +1298,119 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      {/* User Profile Modal */}
+      {isProfileModalOpen && viewingUser && (
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Employee Profile & History</h3>
+              <button 
+                onClick={() => setIsProfileModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Profile Header */}
+              <div className="flex items-center gap-6">
+                <div className="w-20 h-20 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-2xl font-bold">
+                  {viewingUser.name.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="text-2xl font-bold text-gray-900 dark:text-white">{viewingUser.name}</h4>
+                  <p className="text-gray-500 dark:text-gray-400">{viewingUser.department} • {viewingUser.role}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                      viewingUser.status === 'ACTIVE' 
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
+                        : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    }`}>
+                      {viewingUser.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* History Timeline */}
+              <div>
+                <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Activity History</h5>
+                {userHistory.length === 0 ? (
+                  <p className="text-gray-500 dark:text-gray-400 text-center py-8">No activity history found.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {userHistory.map((historyItem, index) => (
+                      <div key={index} className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            {MONTHS[historyItem.cycle.month]} {historyItem.cycle.year}
+                          </span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-md ${
+                            historyItem.cycle.status === 'CLOSED' ? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300' :
+                            historyItem.cycle.status === 'VOTING' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          }`}>
+                            {historyItem.cycle.status}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Actions Taken */}
+                          <div className="space-y-2">
+                            <h6 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions Taken</h6>
+                            <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                              {historyItem.activity.nominated ? (
+                                <><CheckCircle className="w-4 h-4 text-green-500" /> Nominated {historyItem.activity.nominated.name}</>
+                              ) : (
+                                <><XCircle className="w-4 h-4 text-gray-400" /> Did not nominate</>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                              {historyItem.activity.voted ? (
+                                <><CheckCircle className="w-4 h-4 text-green-500" /> Voted</>
+                              ) : (
+                                <><XCircle className="w-4 h-4 text-gray-400" /> Did not vote</>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Recognition Received */}
+                          <div className="space-y-2">
+                            <h6 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Recognition Received</h6>
+                            <div className="text-sm text-gray-700 dark:text-gray-300">
+                              <span className="font-semibold">{historyItem.activity.receivedNominations.length}</span> Nominations
+                            </div>
+                            <div className="text-sm text-gray-700 dark:text-gray-300">
+                              <span className="font-semibold">{historyItem.activity.votesReceived}</span> Votes
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Nomination Reasons */}
+                        {historyItem.activity.receivedNominations.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                            <h6 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Nomination Comments</h6>
+                            <ul className="space-y-2">
+                              {historyItem.activity.receivedNominations.map((nom: any, i: number) => (
+                                <li key={i} className="text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                                  <span className="font-medium text-gray-900 dark:text-white">{nom.from}:</span> "{nom.reason}"
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default AdminDashboard;

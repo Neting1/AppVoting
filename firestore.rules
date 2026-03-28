@@ -28,7 +28,7 @@ service cloud.firestore {
       
       // Allow Admin to update any user (e.g. deactivate)
       // Allow users to update their own profile
-      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow update: if (isSignedIn() && request.auth.uid == userId) || isAdmin();
     }
 
     // Cycles Collection

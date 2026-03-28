@@ -23,9 +23,7 @@ export const Vote: React.FC = () => {
         setActiveCycle(cycle);
 
         const now = Date.now();
-        const isOpen = cycle && 
-                       cycle.status === CycleStatus.VOTING && 
-                       (!cycle.votingEnd || now < cycle.votingEnd);
+        const isOpen = cycle && cycle.status === CycleStatus.VOTING;
 
         if (isOpen && cycle) {
           const nominations = await dbService.getNominations(cycle.id);
@@ -68,12 +66,8 @@ export const Vote: React.FC = () => {
     e.preventDefault();
     if (!activeCycle || !user || !selectedCandidate) return;
 
-    if (activeCycle.votingStart && Date.now() < activeCycle.votingStart && activeCycle.status !== CycleStatus.VOTING) {
-        setError("The voting period has not started yet.");
-        return;
-    }
-    if (activeCycle.votingEnd && Date.now() > activeCycle.votingEnd) {
-        setError("The voting period has ended.");
+    if (activeCycle.status !== CycleStatus.VOTING) {
+        setError("The voting period is not active.");
         return;
     }
 
@@ -99,10 +93,7 @@ export const Vote: React.FC = () => {
      return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading candidates...</div>;
   }
 
-  const now = Date.now();
-  const isClosed = !activeCycle || 
-                   activeCycle.status !== CycleStatus.VOTING || 
-                   (activeCycle.votingEnd && now > activeCycle.votingEnd);
+  const isClosed = !activeCycle || activeCycle.status !== CycleStatus.VOTING;
 
   if (isClosed) {
     return (

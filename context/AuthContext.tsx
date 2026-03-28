@@ -50,8 +50,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               setState({ user: userProfile, isAuthenticated: true });
             }
           } else {
-            console.warn("Auth user found but no Firestore profile. Logging out.");
-            await signOut(auth);
+            console.warn("Auth user found but no Firestore profile yet. Waiting for profile creation.");
             setState({ user: null, isAuthenticated: false });
           }
           setLoading(false);
@@ -101,6 +100,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
         uid = userCredential.user.uid;
+        // Force token refresh to ensure Firestore client has the auth token
+        await userCredential.user.getIdToken(true);
       } catch (authError: any) {
         // SPECIAL HANDLING: If email already exists, check if we need to repair a broken profile
         if (authError.code === 'auth/email-already-in-use') {
