@@ -65,6 +65,8 @@ export const AdminDashboard: React.FC = () => {
   const [certificateData, setCertificateData] = useState<{user: User, cycle: Cycle} | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const certificateRef = useRef<HTMLDivElement>(null);
+  const [whatsAppTemplate, setWhatsAppTemplate] = useState<'celebrate' | 'professional' | 'short'>('celebrate');
+  const [textCopied, setTextCopied] = useState(false);
 
   const refreshData = async () => {
     try {
@@ -308,6 +310,36 @@ export const AdminDashboard: React.FC = () => {
     } finally {
         setIsDownloading(false);
     }
+  };
+
+  const getCongratulationsText = () => {
+    if (!certificateData) return '';
+    const { user, cycle } = certificateData;
+    const monthYear = `${MONTHS[cycle.month]} ${cycle.year}`;
+    const name = user.name;
+    const dept = user.department || 'Twinhill Team';
+
+    switch (whatsAppTemplate) {
+      case 'professional':
+        return `🎖️ *Twinhill Enterprise Recognition of Excellence* 🎖️\n\nWe are pleased to announce *${name}* as the official recipient of the *Employee of the Month* award for *${monthYear}*!\n\n⭐ *${name}*\n💼 *${dept}* Department\n\nThis recognition is a direct result of nominations and votes by peers who highlighted ${name}'s consistent dedication, professional standard, and positive impact on our team's success. \n\nCongratulations, ${name}, on this well-deserved honour, and thank you for your ongoing commitment to our core values. 👏💼⭐`;
+      case 'short':
+        return `🎉 Huge congratulations to *${name}* for winning the *Employee of the Month* award for *${monthYear}*! 🏆 ⭐\n\nYour colleagues at Twinhill Enterprise appreciate your outstanding work and dedication. Keep shining! 🚀👏🔥\n\n#TwinhillEnterprise #EmployeeOfTheMonth #TeamSuccess`;
+      case 'celebrate':
+      default:
+        return `🏆 *EMPLOYEE OF THE MONTH* 🏆\n\nLet us all join in celebrating our incredible colleague, *${name}*, who has been voted *Employee of the Month* for *${monthYear}*! 🥳🎉👏\n\n⭐ *${name}* ⭐\n🏢 Department: *${dept}*\n\nThank you, ${name}, for your exceptional work ethic, support, and outstanding contribution to Twinhill Enterprise. Your dedication inspires all of us! 🚀🔥💼\n\nLet's flood the chat with congratulations! 🍾👇🤩🎈`;
+    }
+  };
+
+  const handleCopyMessage = () => {
+    const text = getCongratulationsText();
+    navigator.clipboard.writeText(text);
+    setTextCopied(true);
+    setTimeout(() => setTextCopied(false), 2000);
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = getCongratulationsText();
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const handleEditClick = (user: User) => {
@@ -897,13 +929,13 @@ export const AdminDashboard: React.FC = () => {
         <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[90vh]">
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800 dark:text-white">Certificate Preview</h3>
+                    <h3 className="font-bold text-gray-800 dark:text-white">Certificate & Celebrations Console</h3>
                     <button onClick={() => setCertificateData(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-auto p-8 bg-gray-100 dark:bg-gray-900 flex justify-center">
+                <div className="flex-1 overflow-auto p-8 bg-gray-100 dark:bg-gray-900 flex flex-col items-center gap-8">
                     {/* Certificate Container to Capture */}
                     <div 
                         ref={certificateRef}
@@ -950,7 +982,13 @@ export const AdminDashboard: React.FC = () => {
                         <div className="z-10 w-full flex flex-col items-center h-full justify-between" style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}>
                             {/* Header Section */}
                             <div className="flex flex-col items-center gap-2 mt-4">
-                                <Award className="w-14 h-14 text-[#C5A059] mb-1" />
+                                <svg className="w-16 h-16 text-[#C5A059] mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                    {/* Medal Outer Circle */}
+                                    <circle cx="12" cy="9" r="6" stroke="#C5A059" fill="none" />
+                                    <circle cx="12" cy="9" r="4.5" stroke="#C5A059" strokeDasharray="1.5 1.5" />
+                                    {/* Ribbons */}
+                                    <path d="M9.5 14.5L7 21L12 19L17 21L14.5 14.5" stroke="#C5A059" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
                                 <h1 
                                     className="text-[44px] font-extrabold text-gray-900 tracking-[0.2em] uppercase leading-none"
                                     style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
@@ -968,24 +1006,30 @@ export const AdminDashboard: React.FC = () => {
                             {/* Recipient Presentation */}
                             <div className="w-full flex flex-col items-center">
                                 <p 
-                                    className="text-gray-500 italic text-base mb-6"
+                                    className="text-gray-500 italic text-[17px] mb-6"
                                     style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
                                 >
                                     This certificate is proudly presented to
                                 </p>
-                                <h2 
-                                    className="text-[52px] leading-tight text-gray-900 px-8 border-b border-[#C5A059]/40 pb-1 inline-block min-w-[60%]"
-                                    style={{ fontFamily: '"Great Vibes", cursive', fontWeight: 'normal' }}
-                                >
-                                    {certificateData.user.name}
-                                </h2>
+                                
+                                <div className="flex items-center justify-center w-full my-1">
+                                    <div className="h-[1px] bg-[#C5A059]/30 flex-1 max-w-[150px]"></div>
+                                    <h2 
+                                        className="text-[54px] font-signature text-gray-900 px-8 relative -top-3 select-none leading-none"
+                                        style={{ fontFamily: '"Great Vibes", cursive', fontWeight: 'normal' }}
+                                    >
+                                        {certificateData.user.name}
+                                    </h2>
+                                    <div className="h-[1px] bg-[#C5A059]/30 flex-1 max-w-[150px]"></div>
+                                </div>
+
                                 <p 
-                                    className="text-gray-600 text-base max-w-xl mx-auto leading-relaxed mt-6"
-                                    style={{ fontFamily: '"Times New Roman", Times, Georgia, serif', color: '#374151' }}
+                                    className="text-gray-600 text-[16px] max-w-xl mx-auto leading-relaxed mt-4"
+                                    style={{ fontFamily: '"Times New Roman", Times, Georgia, serif', color: '#444444' }}
                                 >
                                     For outstanding performance and dedication, having been voted by colleagues as the
                                     <span 
-                                        className="font-extrabold text-[#C5A059] block mt-3 text-2xl tracking-wide uppercase"
+                                        className="font-extrabold text-[#C5A059] block mt-3 text-2xl tracking-[0.08em] uppercase"
                                         style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
                                     >
                                         Employee of the Month
@@ -1010,8 +1054,8 @@ export const AdminDashboard: React.FC = () => {
                                     </p>
                                 </div>
 
-                                <div className="flex flex-col items-center">
-                                    {/* Small central insignia if needed, otherwise empty to mimic mockup */}
+                                <div className="flex flex-col items-center flex-1">
+                                    {/* Small central insignia if needed */}
                                     <div className="w-3"></div>
                                 </div>
 
@@ -1032,6 +1076,112 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                         </div>
                     </div>
+
+                    {/* WhatsApp Congratulations Section */}
+                    <div className="w-[800px] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg p-6 flex flex-col gap-4 text-left">
+                        <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-4">
+                            <div className="flex items-center gap-2">
+                                <span className="p-2 bg-green-500/10 text-green-600 rounded-lg dark:text-green-400">
+                                    <MessageSquare className="w-5 h-5 animate-bounce" />
+                                </span>
+                                <div>
+                                    <h4 className="font-bold text-gray-900 dark:text-white text-base">WhatsApp Congratulations Message</h4>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Choose a style below to copy or directly draft on WhatsApp to recognize the recipient!</p>
+                                </div>
+                            </div>
+                            <span className="text-xs font-semibold px-2.5 py-1 bg-green-100 text-green-800 rounded-full dark:bg-green-900/30 dark:text-green-400 flex items-center">
+                                <CheckCircle className="w-3 h-3 mr-1" /> Template Ready
+                            </span>
+                        </div>
+
+                        {/* Template Tabs Selector */}
+                        <div className="flex border-b border-gray-150 dark:border-gray-700 gap-1 p-1 bg-gray-50 dark:bg-gray-900/60 rounded-lg">
+                            <button
+                                onClick={() => setWhatsAppTemplate('celebrate')}
+                                className={`flex-1 py-2 px-3 text-xs md:text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                                    whatsAppTemplate === 'celebrate'
+                                        ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-md'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <span>🎉</span> High Energy
+                            </button>
+                            <button
+                                onClick={() => setWhatsAppTemplate('professional')}
+                                className={`flex-1 py-2 px-3 text-xs md:text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                                    whatsAppTemplate === 'professional'
+                                        ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-md'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <span>🎖️</span> Formal & Warm
+                            </button>
+                            <button
+                                onClick={() => setWhatsAppTemplate('short')}
+                                className={`flex-1 py-2 px-3 text-xs md:text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                                    whatsAppTemplate === 'short'
+                                        ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-md'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <span>⚡</span> Short & Sweet
+                            </button>
+                        </div>
+
+                        {/* Message Preview Board */}
+                        <div className="relative mt-2">
+                            <textarea
+                                value={getCongratulationsText()}
+                                readOnly
+                                className="w-full h-44 p-4 text-[13px] font-mono bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none text-gray-800 dark:text-gray-200 leading-relaxed resize-none cursor-text shadow-inner"
+                            />
+                            
+                            <div className="absolute top-3 right-3 flex gap-2">
+                                <button
+                                    onClick={handleCopyMessage}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 ${
+                                        textCopied
+                                            ? 'bg-green-600 text-white'
+                                            : 'bg-white hover:bg-gray-100 text-gray-700 border border-gray-250 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700'
+                                    }`}
+                                >
+                                    {textCopied ? (
+                                        <>
+                                            <CheckCircle className="w-3.5 h-3.5 text-white" />
+                                            Copied!
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-3.5 h-3.5 rotate-180" />
+                                            Copy Text
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Direct Share Options */}
+                        <div className="flex gap-3 mt-1">
+                            <button
+                                onClick={handleCopyMessage}
+                                className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-250 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4 rotate-180" />
+                                {textCopied ? 'Copied successfully!' : 'Copy to Clipboard'}
+                            </button>
+                            
+                            <button
+                                onClick={handleShareWhatsApp}
+                                className="flex-1 py-3 px-4 bg-[#25D366] hover:bg-[#20ba59] text-white text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-md"
+                            >
+                                <svg className="w-5 h-5 fill-current text-white mr-1" viewBox="0 0 24 24">
+                                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.731-1.456L0 24zm12.007-3.93c1.8-.001 3.565.483 5.093 1.396l.366.218 3.784-.992-.1.972-.511-.1-.365.1c-.812 1.29-1.928 2.296-3.232 2.9l-.367-.218c-1.42 1.157-3.178 1.776-5.011 1.777C6.88 20.046 2.76 15.933 2.76 10.89c.001-1.636.432-3.236 1.248-4.654l.216-.376L3.22 2.076l3.876.1-.1.353c1.233.918 2.378 1.403 3.655 1.404h.01c4.116 0 7.464 3.348 7.464 7.463 0 4.114-3.348 7.462-7.462 7.462v.1zm.1-13.6h-.1" />
+                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.4a.1.1" />
+                                </svg>
+                                Send Directly with WhatsApp
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="p-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 bg-white dark:bg-gray-800 rounded-b-xl">
@@ -1044,7 +1194,7 @@ export const AdminDashboard: React.FC = () => {
                     <button 
                         onClick={handleDownloadCertificate}
                         disabled={isDownloading}
-                        className="px-6 py-2.5 bg-[#C5A059] hover:bg-[#b08d4b] text-white font-bold rounded-lg shadow-sm flex items-center disabled:opacity-50"
+                        className="px-6 py-2.5 bg-[#C5A059] hover:bg-[#b08d4b] text-white font-bold rounded-lg shadow-md flex items-center disabled:opacity-50"
                     >
                         {isDownloading ? (
                             <>Processing...</>
