@@ -907,54 +907,127 @@ export const AdminDashboard: React.FC = () => {
                     {/* Certificate Container to Capture */}
                     <div 
                         ref={certificateRef}
-                        className="bg-white w-[800px] h-[600px] shadow-2xl relative flex flex-col p-12 text-center items-center justify-between border-[16px] border-double border-[#C5A059]"
-                        style={{ minWidth: '800px', minHeight: '600px', color: 'black' }} // Force black text for certificate
+                        className="bg-white w-[800px] h-[600px] shadow-2xl relative flex flex-col p-12 text-center items-center justify-between"
+                        style={{ 
+                            minWidth: '800px', 
+                            minHeight: '600px', 
+                            color: 'black',
+                            border: '14px solid #C5A059',
+                            boxSizing: 'border-box',
+                            backgroundColor: '#ffffff'
+                        }}
                     >
-                        {/* Decorative Corners */}
-                        <div className="absolute top-4 left-4 w-24 h-24 border-t-4 border-l-4 border-[#C5A059] opacity-50"></div>
-                        <div className="absolute top-4 right-4 w-24 h-24 border-t-4 border-r-4 border-[#C5A059] opacity-50"></div>
-                        <div className="absolute bottom-4 left-4 w-24 h-24 border-b-4 border-l-4 border-[#C5A059] opacity-50"></div>
-                        <div className="absolute bottom-4 right-4 w-24 h-24 border-b-4 border-r-4 border-[#C5A059] opacity-50"></div>
+                        {/* Thin Inner Gold Border Line */}
+                        <div 
+                            className="absolute pointer-events-none" 
+                            style={{ 
+                                top: '16px', 
+                                bottom: '16px', 
+                                left: '16px', 
+                                right: '16px', 
+                                border: '1.5px solid #C5A059',
+                                opacity: 0.7
+                            }}
+                        />
+
+                        {/* Classic L-Shaped Corner Ornaments */}
+                        <div className="absolute top-[24px] left-[24px] w-14 h-14 border-t-2 border-l-2 border-[#C5A059] pointer-events-none"></div>
+                        <div className="absolute top-[24px] right-[24px] w-14 h-14 border-t-2 border-r-2 border-[#C5A059] pointer-events-none"></div>
+                        <div className="absolute bottom-[24px] left-[24px] w-14 h-14 border-b-2 border-l-2 border-[#C5A059] pointer-events-none"></div>
+                        <div className="absolute bottom-[24px] right-[24px] w-14 h-14 border-b-2 border-r-2 border-[#C5A059] pointer-events-none"></div>
+
+                        {/* Bottom Center Seal Arch */}
+                        <div 
+                            className="absolute bottom-[-14px] left-1/2 -translate-x-1/2 w-28 h-14 border-t-2 border-x-2 border-[#C5A059] bg-white rounded-t-full flex items-center justify-center pointer-events-none shadow-[0_-2px_10px_rgba(0,0,0,0.02)]"
+                            style={{ zIndex: 10 }}
+                        >
+                            <div className="w-20 h-10 border-t border-x border-[#C5A059]/50 rounded-t-full flex items-center justify-center pt-1 bg-white">
+                                <Award className="w-6 h-6 text-[#C5A059]" />
+                            </div>
+                        </div>
 
                         {/* Content */}
-                        <div className="z-10 w-full flex flex-col items-center h-full justify-between">
+                        <div className="z-10 w-full flex flex-col items-center h-full justify-between" style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}>
+                            {/* Header Section */}
                             <div className="flex flex-col items-center gap-2 mt-4">
-                                <Award className="w-16 h-16 text-[#C5A059]" />
-                                <h1 className="text-5xl font-serif-display font-bold text-gray-900 tracking-wider uppercase mb-2">Certificate</h1>
-                                <p className="text-xl font-serif-display tracking-[0.3em] text-[#C5A059] uppercase">of Recognition</p>
-                            </div>
-
-                            <div className="my-8 w-full">
-                                <p className="text-gray-500 italic text-lg mb-6">This certificate is proudly presented to</p>
-                                <h2 className="text-6xl font-signature text-gray-900 mb-6 px-8 border-b-2 border-gray-200 pb-2 inline-block min-w-[50%]">
-                                    {certificateData.user.name}
-                                </h2>
-                                <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
-                                    For outstanding performance and dedication, having been voted by colleagues as the
-                                    <span className="font-bold text-[#C5A059] block mt-2 text-2xl font-serif-display">Employee of the Month</span>
+                                <Award className="w-14 h-14 text-[#C5A059] mb-1" />
+                                <h1 
+                                    className="text-[44px] font-extrabold text-gray-900 tracking-[0.2em] uppercase leading-none"
+                                    style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
+                                >
+                                    Certificate
+                                </h1>
+                                <p 
+                                    className="text-xs font-bold tracking-[0.45em] text-[#C5A059] uppercase mt-2"
+                                    style={{ fontFamily: '"Inter", sans-serif' }}
+                                >
+                                    of recognition
                                 </p>
                             </div>
 
-                            <div className="flex justify-between w-full px-12 mt-auto mb-4 items-end">
-                                <div className="text-center">
-                                    <div className="text-xl font-bold text-gray-800 border-b border-gray-400 pb-1 mb-2 min-w-[200px]">
+                            {/* Recipient Presentation */}
+                            <div className="w-full flex flex-col items-center">
+                                <p 
+                                    className="text-gray-500 italic text-base mb-6"
+                                    style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
+                                >
+                                    This certificate is proudly presented to
+                                </p>
+                                <h2 
+                                    className="text-[52px] leading-tight text-gray-900 px-8 border-b border-[#C5A059]/40 pb-1 inline-block min-w-[60%]"
+                                    style={{ fontFamily: '"Great Vibes", cursive', fontWeight: 'normal' }}
+                                >
+                                    {certificateData.user.name}
+                                </h2>
+                                <p 
+                                    className="text-gray-600 text-base max-w-xl mx-auto leading-relaxed mt-6"
+                                    style={{ fontFamily: '"Times New Roman", Times, Georgia, serif', color: '#374151' }}
+                                >
+                                    For outstanding performance and dedication, having been voted by colleagues as the
+                                    <span 
+                                        className="font-extrabold text-[#C5A059] block mt-3 text-2xl tracking-wide uppercase"
+                                        style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
+                                    >
+                                        Employee of the Month
+                                    </span>
+                                </p>
+                            </div>
+
+                            {/* Signatures and Date */}
+                            <div className="flex justify-between w-full px-8 mt-auto mb-4 items-end">
+                                <div className="text-center w-[200px]">
+                                    <div 
+                                        className="text-base font-bold text-gray-800 border-b border-[#C5A059]/30 pb-1 mb-2"
+                                        style={{ fontFamily: '"Times New Roman", Times, Georgia, serif' }}
+                                    >
                                         {MONTHS[certificateData.cycle.month]} {certificateData.cycle.year}
                                     </div>
-                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Date</p>
+                                    <p 
+                                        className="text-[9px] text-[#C5A059] uppercase tracking-[0.2em] font-bold"
+                                        style={{ fontFamily: '"Inter", sans-serif' }}
+                                    >
+                                        Date
+                                    </p>
                                 </div>
 
                                 <div className="flex flex-col items-center">
-                                    <div className="w-20 h-20 rounded-full border-4 border-[#C5A059] flex items-center justify-center mb-2 bg-[#C5A059]/10">
-                                        <Trophy className="w-10 h-10 text-[#C5A059]" />
-                                    </div>
-                                    <p className="text-[10px] text-gray-400 tracking-widest uppercase">Twinhill Enterprise</p>
+                                    {/* Small central insignia if needed, otherwise empty to mimic mockup */}
+                                    <div className="w-3"></div>
                                 </div>
 
-                                <div className="text-center">
-                                    <div className="text-2xl font-signature text-gray-800 border-b border-gray-400 pb-1 mb-2 min-w-[200px]">
+                                <div className="text-center w-[200px]">
+                                    <div 
+                                        className="text-[28px] text-gray-800 border-b border-[#C5A059]/30 pb-1 mb-1 leading-none"
+                                        style={{ fontFamily: '"Great Vibes", cursive', fontWeight: 'normal' }}
+                                    >
                                         Twinhill Admin
                                     </div>
-                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Signature</p>
+                                    <p 
+                                        className="text-[9px] text-[#C5A059] uppercase tracking-[0.2em] font-bold"
+                                        style={{ fontFamily: '"Inter", sans-serif' }}
+                                    >
+                                        Signature
+                                    </p>
                                 </div>
                             </div>
                         </div>
