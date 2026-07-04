@@ -418,7 +418,47 @@ export const dbService = {
   getVotes: async (cycleId: string): Promise<Vote[]> => {
     const q = query(collection(db, 'votes'), where("cycleId", "==", cycleId));
     const snapshot = await safeGetDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
+    const votes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
+    
+    // Deduplicate on-the-fly: each voter is allowed at most 1 vote per cycle
+    const uniqueVotes: Vote[] = [];
+    const seenVoters = new Set<string>();
+    
+    // Sort by timestamp so we keep the first vote cast by each voter
+    const sortedVotes = [...votes].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    
+    for (const vote of sortedVotes) {
+      if (!seenVoters.has(vote.voterId)) {
+        seenVoters.add(vote.voterId);
+        uniqueVotes.push(vote);
+      }
+    }
+    return uniqueVotes;
+  },
+
+  deduplicateVotesInDb: async (cycleId: string): Promise<number> => {
+    const q = query(collection(db, 'votes'), where("cycleId", "==", cycleId));
+    const snapshot = await safeGetDocs(q);
+    const votes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vote));
+    
+    // Sort by timestamp so we preserve the earliest vote cast by each voter and mark later ones as duplicates
+    const sortedVotes = [...votes].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const seenVoters = new Set<string>();
+    let deletedCount = 0;
+    
+    for (const vote of sortedVotes) {
+      if (seenVoters.has(vote.voterId)) {
+        try {
+          await deleteDoc(doc(db, 'votes', vote.id));
+          deletedCount++;
+        } catch (err) {
+          console.error("Failed to delete duplicate vote:", vote.id, err);
+        }
+      } else {
+        seenVoters.add(vote.voterId);
+      }
+    }
+    return deletedCount;
   },
 
   getUserVote: async (userId: string, cycleId: string): Promise<Vote | undefined> => {

@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { dbService } from '../services/db';
-import { Cycle, CycleStatus, CycleStats, User, UserRole } from '../types';
+import { Cycle, CycleStatus, CycleStats, User, UserRole, Nomination, Vote as VoteType } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, XCircle, Vote, Trophy, Lock, Clock, FileBadge, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react';
+import { Download, Plus, Play, StopCircle, Archive, Pencil, Power, X, UserPlus, Calendar, Award, MessageSquare, CheckCircle, XCircle, Vote, Trophy, Lock, Clock, FileBadge, Search, Filter, ChevronUp, ChevronDown, Eye, ShieldCheck, Users } from 'lucide-react';
 // @ts-ignore
 import confetti from 'canvas-confetti';
 // @ts-ignore
@@ -68,6 +68,15 @@ export const AdminDashboard: React.FC = () => {
   const [whatsAppTemplate, setWhatsAppTemplate] = useState<'celebrate' | 'professional' | 'short'>('celebrate');
   const [textCopied, setTextCopied] = useState(false);
 
+  // Accountability & Audit State
+  const [activeNominations, setActiveNominations] = useState<Nomination[]>([]);
+  const [activeVotes, setActiveVotes] = useState<VoteType[]>([]);
+  const [selectedAccountabilityNominee, setSelectedAccountabilityNominee] = useState<CycleStats | null>(null);
+  const [accountabilityTab, setAccountabilityTab] = useState<'nominations' | 'votes'>('nominations');
+  const [accountabilitySearchQuery, setAccountabilitySearchQuery] = useState('');
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const [dedupSuccessMessage, setDedupSuccessMessage] = useState<string | null>(null);
+
   const refreshData = async () => {
     try {
       try {
@@ -83,6 +92,16 @@ export const AdminDashboard: React.FC = () => {
         try {
           const stats = await dbService.getCycleStats(cycle.id);
           setStats(stats || []);
+          
+          try {
+            const nominations = await dbService.getNominations(cycle.id);
+            setActiveNominations(nominations || []);
+            const votes = await dbService.getVotes(cycle.id);
+            setActiveVotes(votes || []);
+          } catch (fetchErr) {
+            console.warn("Failed to load nominations or votes for active cycle", fetchErr);
+          }
+
           if (cycle.winnerId) {
             const winnerUser = await dbService.getUserById(cycle.winnerId);
             setWinner(winnerUser || null);
@@ -190,6 +209,36 @@ export const AdminDashboard: React.FC = () => {
   const toLocalISO = (d: Date) => {
       const pad = (n: number) => n.toString().padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const handleDeduplicateVotes = async () => {
+    if (!activeCycle) return;
+    setIsDeduplicating(true);
+    setDedupSuccessMessage(null);
+    try {
+      const removedCount = await dbService.deduplicateVotesInDb(activeCycle.id);
+      setDedupSuccessMessage(`Successfully audit-cleared ${removedCount} duplicate vote(s) in the active cycle. The real winner and statistics have been dynamically recalculated!`);
+      await refreshData();
+      setTimeout(() => {
+        setDedupSuccessMessage(null);
+      }, 10000);
+    } catch (err) {
+      console.error("Error deduplicating votes:", err);
+    } finally {
+      setIsDeduplicating(false);
+    }
   };
 
   const handleOpenCreateCycle = () => {
@@ -636,9 +685,20 @@ export const AdminDashboard: React.FC = () => {
                     <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{stat.nomineeName}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{stat.voteCount} votes • {stat.nominationCount} nominations</p>
                   </div>
-                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2.5 py-1 rounded-full">
+                  <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2.5 py-1 rounded-full mr-2">
                     {Math.round((stat.voteCount / (stats.reduce((acc, curr) => acc + curr.voteCount, 0) || 1)) * 100)}%
                   </div>
+                  <button
+                    onClick={() => {
+                      setSelectedAccountabilityNominee(stat);
+                      setAccountabilityTab('nominations');
+                      setAccountabilitySearchQuery('');
+                    }}
+                    className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 dark:text-gray-400 dark:hover:text-indigo-400 rounded-lg transition-colors"
+                    title="View Voters & Nominators (Accountability Audit)"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
                 </div>
               ))
             ) : (
@@ -646,6 +706,148 @@ export const AdminDashboard: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Nominee Accountability & Audit Console */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Nominee Accountability & Audit Console</h2>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Full breakdown of all nominations and votes cast for employees in the active cycle.</p>
+          </div>
+          {activeCycle && (
+            <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+              <button
+                onClick={handleDeduplicateVotes}
+                disabled={isDeduplicating}
+                className="text-xs bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-3 py-1.5 rounded-lg font-semibold border border-amber-200 dark:border-amber-900 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-sm"
+                title="Audit and remove any duplicate votes cast in the active cycle"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                {isDeduplicating ? 'Auditing and Purging...' : 'Purge Duplicate Votes'}
+              </button>
+              <span className="text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 px-3 py-1.5 rounded-lg font-semibold border border-indigo-100 dark:border-indigo-800 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                Active Cycle: {MONTHS[activeCycle.month]} {activeCycle.year}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {dedupSuccessMessage && (
+          <div className="mx-6 mt-4 p-4 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/60 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-250">
+            <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm">
+              <span className="font-bold">Database Integrity Cleared:</span> {dedupSuccessMessage}
+            </div>
+            <button 
+              onClick={() => setDedupSuccessMessage(null)}
+              className="text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {stats.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-600 uppercase tracking-wider text-xs font-sans">
+                <tr>
+                  <th className="px-6 py-4">Nominated Employee</th>
+                  <th className="px-6 py-4">Department</th>
+                  <th className="px-6 py-4">Received Nominations</th>
+                  <th className="px-6 py-4">Received Votes</th>
+                  <th className="px-6 py-4">Nominated By</th>
+                  <th className="px-6 py-4">Voted By</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                {stats.map(stat => {
+                  const nomineeUser = users.find(u => u.id === stat.nomineeId);
+                  const nomineeNominations = activeNominations.filter(n => n.nomineeId === stat.nomineeId);
+                  const nomineeVotes = activeVotes.filter(v => v.nomineeId === stat.nomineeId);
+
+                  // Extract names for a compact, readable preview in the table
+                  const nominatorNames = nomineeNominations.map(n => {
+                    const u = users.find(user => user.id === n.nominatorId);
+                    return u ? u.name : 'Unknown';
+                  }).join(', ');
+
+                  const voterNames = nomineeVotes.map(v => {
+                    const u = users.find(user => user.id === v.voterId);
+                    return u ? u.name : 'Unknown';
+                  }).join(', ');
+
+                  return (
+                    <tr key={stat.nomineeId} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          {nomineeUser?.avatar ? (
+                            <img src={nomineeUser.avatar} className="w-8 h-8 rounded-full mr-3 object-cover border border-gray-200 dark:border-gray-600" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-xs mr-3 border border-indigo-200 dark:border-indigo-700">
+                              {stat.nomineeName.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-semibold text-gray-900 dark:text-white block">{stat.nomineeName}</span>
+                            <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">ID: {stat.nomineeId}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 dark:text-gray-400 font-medium">
+                        {nomineeUser?.department || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/50">
+                          {stat.nominationCount} {stat.nominationCount === 1 ? 'nomination' : 'nominations'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/50">
+                          {stat.voteCount} {stat.voteCount === 1 ? 'vote' : 'votes'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 max-w-[200px] truncate">
+                        <span className="text-xs text-gray-600 dark:text-gray-300" title={nominatorNames || 'None'}>
+                          {nominatorNames || <span className="text-gray-400 italic">None</span>}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 max-w-[200px] truncate">
+                        <span className="text-xs text-gray-600 dark:text-gray-300" title={voterNames || 'None'}>
+                          {voterNames || <span className="text-gray-400 italic">None</span>}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => {
+                            setSelectedAccountabilityNominee(stat);
+                            setAccountabilityTab('nominations');
+                            setAccountabilitySearchQuery('');
+                          }}
+                          className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-sm transition-all inline-flex items-center gap-1 active:scale-95"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Audit Details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-400 dark:text-gray-500 bg-gray-50/50 dark:bg-gray-800/50">
+            <Users className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+            <p className="text-sm">No nominations or votes recorded in the active cycle yet.</p>
+          </div>
+        )}
       </div>
 
       {/* Hall of Fame / Past Winners */}
@@ -1628,6 +1830,221 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Accountability Audit Details Modal */}
+      {selectedAccountabilityNominee && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Accountability Audit Details</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Verifying peer transparency and voting integrity</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedAccountabilityNominee(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Nominee Stats Summary */}
+            <div className="p-6 bg-indigo-50/50 dark:bg-indigo-950/20 border-b border-gray-100 dark:border-gray-700 shrink-0 flex flex-col sm:flex-row items-center gap-6 justify-between">
+              <div className="flex items-center gap-4 text-center sm:text-left">
+                <div className="w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-xl font-bold border border-indigo-200 dark:border-indigo-800">
+                  {selectedAccountabilityNominee.nomineeName.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold text-gray-900 dark:text-white">{selectedAccountabilityNominee.nomineeName}</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Department: <span className="font-semibold text-gray-700 dark:text-gray-300">{users.find(u => u.id === selectedAccountabilityNominee.nomineeId)?.department || 'N/A'}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4 self-stretch sm:self-auto justify-center">
+                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-xl text-center min-w-[100px] shadow-sm">
+                  <span className="text-xs text-gray-400 dark:text-gray-500 block uppercase tracking-wider font-semibold">Nominations</span>
+                  <span className="text-lg font-extrabold text-blue-600 dark:text-blue-400">{selectedAccountabilityNominee.nominationCount}</span>
+                </div>
+                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-xl text-center min-w-[100px] shadow-sm">
+                  <span className="text-xs text-gray-400 dark:text-gray-500 block uppercase tracking-wider font-semibold">Votes</span>
+                  <span className="text-lg font-extrabold text-purple-600 dark:text-purple-400">{selectedAccountabilityNominee.voteCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tab selection & Search */}
+            <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-850 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl w-full sm:w-auto self-start sm:self-auto">
+                <button
+                  onClick={() => setAccountabilityTab('nominations')}
+                  className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    accountabilityTab === 'nominations'
+                      ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Nominations ({activeNominations.filter(n => n.nomineeId === selectedAccountabilityNominee.nomineeId).length})
+                </button>
+                <button
+                  onClick={() => setAccountabilityTab('votes')}
+                  className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    accountabilityTab === 'votes'
+                      ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                  }`}
+                >
+                  <Vote className="w-4 h-4" />
+                  Votes ({activeVotes.filter(v => v.nomineeId === selectedAccountabilityNominee.nomineeId).length})
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={`Search by name or department...`}
+                  value={accountabilitySearchQuery}
+                  onChange={e => setAccountabilitySearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* List content */}
+            <div className="p-6 overflow-y-auto flex-1 bg-white dark:bg-gray-800">
+              {accountabilityTab === 'nominations' ? (
+                (() => {
+                  const filteredNominations = activeNominations
+                    .filter(n => n.nomineeId === selectedAccountabilityNominee.nomineeId)
+                    .filter(n => {
+                      const sender = users.find(u => u.id === n.nominatorId);
+                      if (!sender) return false;
+                      const q = accountabilitySearchQuery.toLowerCase();
+                      return sender.name.toLowerCase().includes(q) || sender.department.toLowerCase().includes(q);
+                    });
+
+                  if (filteredNominations.length === 0) {
+                    return (
+                      <div className="text-center py-12 text-gray-400 dark:text-gray-500">
+                        <MessageSquare className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                        <p className="text-sm">No nominations found matching the filters.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {filteredNominations.map(nom => {
+                        const nominator = users.find(u => u.id === nom.nominatorId);
+                        return (
+                          <div key={nom.id} className="bg-gray-50 dark:bg-gray-700/30 rounded-2xl p-5 border border-gray-100 dark:border-gray-700">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-gray-700/60 pb-3 mb-3">
+                              <div className="flex items-center">
+                                {nominator?.avatar ? (
+                                  <img src={nominator.avatar} className="w-9 h-9 rounded-full mr-3 object-cover border border-gray-200 dark:border-gray-600" />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-700 dark:text-blue-300 font-bold text-sm mr-3">
+                                    {nominator?.name.charAt(0) || '?'}
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="font-semibold text-gray-950 dark:text-white block text-sm">{nominator?.name || 'Unknown'}</span>
+                                  <span className="text-xs text-gray-400 dark:text-gray-500">{nominator?.email || 'N/A'}</span>
+                                </div>
+                              </div>
+                              <div className="text-right sm:text-right">
+                                <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 mb-1 font-sans">
+                                  {nominator?.department || 'N/A'}
+                                </span>
+                                <span className="block text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                  {formatTimestamp(nom.timestamp)}
+                                </span>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">Nomination Reason</span>
+                              <p className="text-sm text-gray-700 dark:text-gray-300 italic bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-100 dark:border-gray-750 shadow-inner">
+                                "{nom.reason}"
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              ) : (
+                (() => {
+                  const filteredVotes = activeVotes
+                    .filter(v => v.nomineeId === selectedAccountabilityNominee.nomineeId)
+                    .filter(v => {
+                      const voter = users.find(u => u.id === v.voterId);
+                      if (!voter) return false;
+                      const q = accountabilitySearchQuery.toLowerCase();
+                      return voter.name.toLowerCase().includes(q) || voter.department.toLowerCase().includes(q);
+                    });
+
+                  if (filteredVotes.length === 0) {
+                    return (
+                      <div className="text-center py-12 text-gray-400 dark:text-gray-500">
+                        <Vote className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                        <p className="text-sm">No votes found matching the filters.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filteredVotes.map(vote => {
+                        const voter = users.find(u => u.id === vote.voterId);
+                        return (
+                          <div key={vote.id} className="bg-gray-50 dark:bg-gray-700/30 rounded-2xl p-4 border border-gray-100 dark:border-gray-750 flex items-center justify-between">
+                            <div className="flex items-center">
+                              {voter?.avatar ? (
+                                <img src={voter.avatar} className="w-10 h-10 rounded-full mr-3 object-cover border border-gray-200 dark:border-gray-600" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-700 dark:text-purple-300 font-bold text-sm mr-3">
+                                  {voter?.name.charAt(0) || '?'}
+                                </div>
+                              )}
+                              <div>
+                                <span className="font-semibold text-gray-900 dark:text-white block text-sm">{voter?.name || 'Unknown'}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 block">{voter?.email || 'N/A'}</span>
+                                <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-mono mt-0.5">
+                                  {formatTimestamp(vote.timestamp)}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800 font-sans">
+                              {voter?.department || 'N/A'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0 flex justify-end">
+              <button
+                onClick={() => setSelectedAccountabilityNominee(null)}
+                className="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md active:scale-95 transition-all"
+              >
+                Close Audit View
+              </button>
             </div>
           </div>
         </div>
